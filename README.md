@@ -3,9 +3,9 @@
 
 This is loader for [Atari FujiNet Config](https://github.com/FujiNetWIFI/fujinet-config) program. It uses high speed SIO routines for faster config load. When loading, the banner is shown and simple progress bar is being updated.
 
-The code relies on PicoBoot and high speed SIO routines. Both are part of [MyPicoDos](https://www.horus.com/~hias/atari/#mypdos), a "gamedos" for the 8-bit Ataris, written by HiassofT.
-
 ![](loader.png)
+
+The code relies on PicoBoot and high speed SIO routines. Both are part of [MyPicoDos](https://www.horus.com/~hias/atari/#mypdos), a "gamedos" for the 8-bit Ataris, written by HiassofT.
 
 ## How it works
 
