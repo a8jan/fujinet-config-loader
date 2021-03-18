@@ -69,6 +69,6 @@ OR
 
 b) The `cloader-updater.sh` script can be used to calculate new value and update the PBSF byte in existing cloader.bin file. No need to recompile the loader. This method is used in above example.
 
-Used formulas assumes SD format with 125 data bytes per sector will be used.
+Assuming SD format with 125 data bytes per sector will be used.
 
 Another solution is to let the loader calculate PBSF prior loading the file but this would increase the code size (which is loaded with standard/slow SIO) ... .. and I am lazy to code it now ;-)
