@@ -1,0 +1,166 @@
+;  cloader - Config loader for FujiNet, loads CONFIG.COM using HSIO routines
+;  2021 apc.atari@gmail.com
+;
+;  This program is free software; you can redistribute it and/or modify
+;  it under the terms of the GNU General Public License as published by
+;  the Free Software Foundation; either version 2 of the License, or
+;  (at your option) any later version.
+;
+;  This program is distributed in the hope that it will be useful,
+;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;  GNU General Public License for more details.
+;
+;  You should have received a copy of the GNU General Public License
+;  along with this program; if not, write to the Free Software
+;  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+    .IF .DEF PARTHI
+; get labels from low speed part
+	.OPT NO OBJ
+        .include "cloader-lo.src"
+	.OPT OBJ
+    .ENDIF
+
+        * = CLLOEND
+
+SETDLIST
+; setup our Display List
+        LDA #0
+        STA $D40E       ; disable NMI
+        STA $D400       ; disable DMA
+        LDA $230
+        STA DLSAV
+        LDA $231
+        STA DLSAV+1
+        LDA #<DLIST
+        STA $230
+        LDA #>DLIST
+        STA $231
+        LDA #$21        ; narrow play field
+        STA $22F        ; shadow of DMACTL
+        LDA #0
+        STA $41         ; silent SIO
+        LDX $14
+        LDA #$C0
+        STA $D40E       ; re-enable NMI
+?WVBI   CPX $14
+        BEQ ?WVBI       ; wait a bit before starting SIO calls (with critical flag set)
+        RTS
+
+LOACFG
+; prepare "empty" progress bar
+        LDA #$55
+        LDX #11
+?PB     STA PBAR,x
+        DEX
+        BPL ?PB
+; patch COM/LZ4 loader to update progress bar
+        LDA #<RREADPB
+        STA JMPSIO+1
+        LDA #>RREADPB
+        STA JMPSIO+2
+; ; release stack a bit
+;         LDX #$FB
+;         TXS
+; load Config
+	LDA CFGSSEC     ; Config start sector
+	STA SECLO
+	LDA CFGSSEC+1
+	STA SECHI
+; after load continue at CLEANUP
+        LDA #<CLNVEC
+        STA JMPRUNV+1
+        LDA #>CLNVEC
+        STA JMPRUNV+2
+        JMP DOLOAD
+
+CLEANUP
+; some cleanup here
+
+;     .IF .DEF HIGHSPEED
+; ; restore HSIO index to saved value
+;         LDA HISAV
+;         BMI ?NOHS2
+;         STA HIVAL
+;         LDX #SETHICMD-SIOCMDS+11
+;         JSR CALLSIO
+; ?NOHS2
+;     .ENDIF
+
+; restore Display List
+        LDA #0
+        STA $D40E       ; disable NMI
+        STA $D400       ; disable DMA
+        LDA DLSAV
+        STA $230
+        LDA DLSAV+1
+        STA $231
+        LDA #$22        ; standard play field
+        STA $22F        ; shadow of DMACTL
+        LDA #3
+        STA $41         ; noisy SIO
+        LDX $14
+        LDA #$C0
+        STA $D40E       ; re-enable NMI
+?WVBI2  CPX $14
+        BEQ ?WVBI2      ; wait for next completed VBI
+        ; start Config
+        JMP ($2E0)
+
+
+; progress bar update + read sector
+RREADPB CLC
+?TB2    LDA PBSF
+        ADC SEC2PB
+        STA SEC2PB
+        BCC ?JRR
+; update progress bar
+        LDX PBOF
+        LDA PBAR,X
+        EOR PBMASK
+        STA PBAR,X
+        LDA PBMASK
+        LSR A
+        ROR A
+        BCC ?UP1
+        ROR A
+        INC PBOF
+?UP1    STA PBMASK
+?JRR    JMP NE459
+
+
+; video memory
+VRAM    = $0CE0
+; progress bar address
+PBAR    = VRAM+10
+; logo address
+BANNER  = VRAM+32
+
+DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
+        ; banner area
+        .BYTE 15+64, <BANNER, >BANNER
+        .BYTE 15, 15, 15, 15, 15, 15, 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
+        ; 4K boundary
+        .BYTE 15+64, <(VRAM+800), >(VRAM+800)
+        .BYTE 15, 15, 15, 15, 15, 15, 15
+        .BYTE 112, 112
+        ; progress bar area
+        .BYTE 13+64, <VRAM, >VRAM
+        .BYTE 65, <DLIST, >DLIST
+
+LOADEREND = *
+
+        * = BANNER
+        ; * = $0E20
+        .incbin "../data/cloader.dat"
+
+; init address
+	* = $02E2
+	.WORD SETDLIST
+
+; run address
+	* = $02E0
+	.WORD LOACFG

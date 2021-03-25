@@ -7,7 +7,8 @@
 
 ATASM ?= atasm
 
-PROGS = picoboot.bin cloader.bin cloader-nohs.bin
+# PROGS = picoboot.bin cloader.bin cloader-nohs.bin
+PROGS = cloader.bin
 
 all: $(PROGS)
 
@@ -29,19 +30,31 @@ HISIOINC = hisio/hisio.inc hisio/hisiocode.src hisio/hisiodet.src \
         hisio/hisiocode-check.src hisio/hisiocode-diag.src \
         hisio/hisiocode-receive.src hisio/hisiocode-vbi.src
 
-# picoboot mini COM loader
-PICOBOOTSRC = picobootcode.src common.inc rreadcode.src comloadcode.src
+# # picoboot mini COM loader
+# PICOBOOTSRC = picobootcode.src common.inc rreadcode.src comloadcode.src
 
-picoboot.bin: $(PICOBOOTSRC)
-	$(ATASM) $(ASMFLAGS) -r -o$@ $<
+# picoboot.bin: $(PICOBOOTSRC)
+# 	$(ATASM) $(ASMFLAGS) -r -o$@ $<
 
-# config loader with HSIO routines included
-cloader.bin: cloader.src $(PICOBOOTSRC) $(HISIOINC)
-	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader.lst -o$@ $<
+# # config loader with HSIO routines included
+# cloader.bin: cloader.src $(PICOBOOTSRC) $(HISIOINC)
+# 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader.lst -o$@ $<
 
-# config loader without HSIO
-cloader-nohs.bin: cloader.src $(PICOBOOTSRC) $(HISIOINC)
-	$(ATASM) $(ASMFLAGS) -gcloader-nohs.lst -o$@ $<
+# # config loader without HSIO
+# cloader-nohs.bin: cloader.src $(PICOBOOTSRC) $(HISIOINC)
+# 	$(ATASM) $(ASMFLAGS) -gcloader-nohs.lst -o$@ $<
+
+
+# config loader low speed part - HSIO routines
+cloader-lo.obj: cloader-lo.src cloader-hi.src $(HISIOINC)
+	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader-lo.lst -o$@ $<
+
+# config loader high speed part - Config load, display list, banner, progress bar
+cloader-hi.obj: cloader-hi.src cloader-lo.src $(HISIOINC)
+	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -dPARTHI=1 -gcloader-hi.lst -o$@ $<
+
+cloader.bin: cloader-lo.obj cloader-hi.obj
+	cat cloader-lo.obj cloader-hi.obj > $@
 
 clean:
-	rm -f *.bin *.lst
+	rm -f *.obj *.bin *.lst
