@@ -1,0 +1,257 @@
+; ZX0 boot code
+
+LOADSECT        = 4             ; sector to start loading from
+
+RUNAD = $2e0
+INITAD = $2e2
+DSCTLN = $2d5
+
+DDEVIC = $300
+DUNIT = $301
+DCOMND = $302
+DSTATS = $303
+DBUFLO = $304
+DBUFHI = $305
+DTIMLO = $306
+DBYTLO = $308
+DBYTHI = $309
+DAUX1 = $30A
+DAUX2 = $30B
+
+DSKINV = $E453
+
+BUFFER          = $780          ; sector buffer
+UNPAC_PTR       = $43
+LOAD_PTR        = $45
+LOAD_END        = $47
+BUFFER_OFS      = $49           ; offset to current byte
+
+BOOT            = $0800
+
+;--------------------------------------------------
+        * = BOOT
+        .BYTE $78, $03
+        .WORD BOOT
+        .WORD $E477
+;--------------------------------------------------
+        LDA #>BUFFER
+        STA DBUFHI
+        LDA #<BUFFER
+        STA DBUFLO
+        STA DSCTLN
+        LDY #<LOADSECT
+        LDA #>LOADSECT
+        JSR READ_SECTOR
+        LDY #$00
+        STY BUFFER_OFS
+?LOAD1
+        JSR GET_BYTE
+        BMI RUN_IT
+        STA LOAD_PTR
+        JSR GET_BYTE
+        STA LOAD_PTR+1
+        AND LOAD_PTR
+        CMP #$FF
+        BEQ ?LOAD1
+
+        LDA #<DO_RTS
+        STA INITAD
+        LDA #>DO_RTS
+        STA INITAD+1
+        JSR GET_BYTE
+        STA LOAD_END
+        JSR GET_BYTE
+        STA LOAD_END+1
+        ORA LOAD_END
+        BEQ DZX0_STANDARD
+?LOAD2
+        JSR GET_BYTE
+        LDY #$00
+        STA (LOAD_PTR),Y
+        LDY LOAD_PTR
+        LDA LOAD_PTR+1
+        INC LOAD_PTR
+        BNE ?LO1
+        INC LOAD_PTR+1
+?LO1
+        CPY LOAD_END
+        SBC LOAD_END+1
+        BCC ?LOAD2
+CALL_INIT
+        LDA #>(?LOAD1-1)
+        PHA
+        LDA #<(?LOAD1-1)
+        PHA
+        JMP (INITAD)
+;--------------------------------------------------
+RUN_IT
+        LDA #$01
+        STA $09
+        JMP (RUNAD)
+;--------------------------------------------------
+DZX0_STANDARD
+                            ; A = 0
+        STA LENL
+        STA LENH
+        LDA LOAD_PTR
+        STA UNPAC_PTR
+        LDA LOAD_PTR+1
+        STA UNPAC_PTR+1
+        JSR GET_BYTE
+        CMP #$02
+?HANG
+        BNE ?HANG
+        LDA #$FF
+        STA OFFSETL
+        STA OFFSETH
+        LDA #$80
+
+; Literal (copy next N bytes from compressed file)
+; 0  Elias(length)  byte[1]  byte[2]  ...  byte[N]
+DZX0S_LITERALS
+        JSR DZX0S_ELIAS
+        PHA
+?DZ0
+        JSR GET_BYTE
+        LDY #$00
+        STA (UNPAC_PTR),Y
+        INC UNPAC_PTR
+        BNE ?DZ1
+        INC UNPAC_PTR+1
+?DZ1
+        LDA #$FF
+LENL        = *-1
+        BNE ?DZ2
+        DEC LENH
+?DZ2
+        DEC LENL
+        LDA LENL
+        ORA #$FF
+LENH        = *-1
+        BNE ?DZ0
+        PLA
+        ASL
+        BCS DZX0_NEW_OFFSET
+
+; Copy from last offset (repeat N bytes from last offset)
+; 0  Elias(length)
+        JSR DZX0S_ELIAS
+DZX0S_COPY
+        PHA
+        LDA UNPAC_PTR
+        CLC
+        ADC #$FF
+OFFSETL     = *-1
+        STA LOAD_END
+        LDA UNPAC_PTR+1
+        ADC #$FF
+OFFSETH     = *-1
+        STA LOAD_END+1
+        LDY #$00
+        LDX LENL
+PAGE
+        LDA (LOAD_END),Y
+        STA (UNPAC_PTR),Y
+        INC UNPAC_PTR
+        BNE ?DZ3
+        INC UNPAC_PTR+1
+?DZ3
+        INC LOAD_END
+        BNE ?DZ4
+        INC LOAD_END+1
+?DZ4
+        DEX
+        BNE PAGE
+        DEC LENH
+        BPL PAGE
+        STX LENH
+        STX LENL
+        PLA
+        ASL
+        BCC DZX0S_LITERALS
+
+; Copy from new offset (repeat N bytes from new offset)
+; 1  Elias(MSB(offset))  LSB(offset)  Elias(length-1)
+DZX0_NEW_OFFSET    
+        JSR DZX0S_ELIAS
+        PHA
+        PHP
+        LDA #$00
+        SEC
+        SBC LENL
+        STA OFFSETH
+        BNE ?DZ5
+        PLP
+        PLA
+        JMP CALL_INIT
+
+?DZ5
+        JSR GET_BYTE
+        PLP
+        STA OFFSETL
+        ROR OFFSETH
+        ROR OFFSETL
+        LDX #$00
+        STX LENH
+        INX
+        STX LENL
+        PLA
+        BCS ?DZ6
+        JSR DZX0S_ELIAS_BACKTRACK
+?DZ6
+        INC LENL
+        BNE ?DZ7
+        INC LENH
+?DZ7
+        JMP DZX0S_COPY
+;--------------------------------------------------
+DZX0S_ELIAS
+        INC LENL
+DZX0S_ELIAS_LOOP
+        ASL
+        BNE DZX0S_ELIAS_SKIP
+        NOP
+        JSR GET_BYTE
+        SEC
+        ROL
+DZX0S_ELIAS_SKIP
+        BCC DZX0S_ELIAS_BACKTRACK
+        RTS
+;--------------------------------------------------
+DZX0S_ELIAS_BACKTRACK
+        ASL
+        ROL LENL
+        ROL LENH
+        JMP DZX0S_ELIAS_LOOP
+;--------------------------------------------------
+NEXT_SECTOR
+        LDA BUFFER+125
+        AND #$03
+        LDY BUFFER+126
+        BNE READ_SECTOR
+        CMP #$00
+        BNE READ_SECTOR
+        LDY #$AA
+DO_RTS                      RTS
+;--------------------------------------------------
+READ_SECTOR
+        STA DAUX2
+        STY DAUX1
+        LDX #$52
+        STX DCOMND
+        JMP DSKINV
+;--------------------------------------------------
+GET_BYTE
+        LDY BUFFER_OFS
+        CPY BUFFER+127
+        BCC $096E
+        JSR NEXT_SECTOR
+        BMI ?GB1
+        LDY #$00
+        LDA BUFFER,Y
+        INY
+        STY BUFFER_OFS
+        LDY #$01
+?GB1
+        RTS
+;--------------------------------------------------
