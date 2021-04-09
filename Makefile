@@ -14,6 +14,7 @@ clean:
 dist: all
 	mkdir -p dist
 	cp src/*.bin dist
+	cp data/boot-lz4.obx dist
 
 # To update progress bar speed factor to correspond with the size of config.com:
 # (a) modify CFGSIZE in cloader.src and recompile

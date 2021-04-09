@@ -1,0 +1,245 @@
+DVSTAT          equ $2ea
+
+SECTOR_SIZE     equ    256   
+DIR_SECTOR      equ    $169
+FILE_SECTOR     equ    $04
+buffer          equ     $700
+runad            equ    $2e0
+initad            equ    $2e2
+dsctln            equ    $2d5
+
+DDEVIC          equ     $300
+DUNIT           equ     $301    ; unit number
+DCOMND          equ    $302    ;command byte
+dstats          equ     $303    ;status byte
+dbuflo          equ     $304    ;data buffer pointer DBUFA
+dbufhi            equ    $305
+DTIMLO          equ     $306    ;timout value ; DUNUSE - $307
+DBYTLO          equ     $308    ;number of bytes to transfer DBYT
+DBYTHI          equ     $309
+DAUX1           equ    $30a
+DAUX2           equ    $30b
+
+SIOINI          equ     $E459
+
+buffer_ofs      equ     $43
+_no_dir_sector  equ     $44
+load_ptr        equ     $45
+load_end_l      equ     $47
+load_end_h      equ     $48
+lenH            equ     $49
+
+;67-73              43-49              FMZSPG
+;    Disk file manager system (FMS) page zero registers (seven
+;    bytes).
+
+
+BOOT            equ     $480
+
+                opt    h-l+
+                org    BOOT
+
+    dta    c'x',3,a(BOOT),a($e477)
+
+ 
+
+makeSIO         ldy     #7          ; ZBEDNE !!!  DVSTAT
+@               lda     sdeddd,y    ; -
+                sta     DCOMND,y    ; -
+                dey                 ; -
+                bpl     @-          ; -
+                jsr     SIOINI      ; -
+                bmi     makeSIO     ; -
+
+                ldx     #$00
+                ldy     #$80
+                lda     $780
+                and     #%00100000   ; 1=D 0=S
+                beq     _jestS
+                inx                  ; 01 double
+                ldy     #$00
+_jestS          sty     DBUFLO   ; adres 700 lub 780
+                sty     DBYTLO   ; wielkosc 100 lub 80
+                stx     DBYTHI
+;                        DBUFHI     ; 700 07                  780 07
+;                        DBUFLO     ;     00                      80
+;                        DBYTHI     ; 100 01                  80  00
+;                        DBYTLO     ;     00                      80
+                sty     density3
+
+                ldy <FILE_SECTOR
+                lda >FILE_SECTOR
+                jsr _READ_SECTOR
+
+                ldy #0  ;DBYTLO  ; = 0 lub 80
+                sty buffer_ofs
+
+load_1          jsr     _GET_BYTE
+            bmi     load_run        ; tak ! RUN dobrze
+                sta     load_ptr          ; l
+                jsr     _GET_BYTE
+                sta     load_ptr+1        ; h
+                and     load_ptr          ; l
+                cmp     #$ff                ; identyfikator $ffff czy adres poczatku danych
+                beq     load_1              ; jesli identyfikator $ffff to skok
+
+_load_ct        lda <_ret
+                sta initad
+                lda >_ret
+                sta initad+1        ; zawsze ustawia init
+
+                jsr _GET_BYTE
+                sta load_end_l
+                jsr _GET_BYTE
+                sta load_end_h      ; koniec danych
+                ora load_end_l      ; 0000 - compressed block
+                beq unlz4_go        ; dekompresor -----------------------------------------------
+
+load_2            jsr _GET_BYTE
+                ldy #0
+                sta (load_ptr),y
+                ldy load_ptr
+                lda load_ptr+1
+                inc load_ptr
+                bne @+
+                inc load_ptr+1
+@             cpy load_end_l
+             sbc load_end_h
+                bcc load_2
+
+unlz4_wroc      ; powrot z unlz4
+
+                lda >load_1-1
+                pha
+                lda <load_1-1
+                pha
+ini_ad_lh       jmp (initad)        ; kolejny blok
+
+load_run
+; dodane ponizej ale brakuje miejsca     ;
+                LDA runad                ;
+                STA $0A     ;DOSVEC      ;
+                STA $0C     ;DOSINI      ;
+                LDA runad+1              ;
+                STA $0B     ;DOSVEC+1    ;
+                STA $0D     ;DOSINI+1    ;
+                LDA #$01                 ;
+                STA $09     ;BOOT        ;
+                LDA #$00                 ;
+                STA $0244   ;COLDST      ;
+; dodane powyzej                         ;
+                jmp (runad)
+
+
+unlz4_go        ; A=0
+                sta lenH
+                lda load_ptr
+                sta dest
+                lda load_ptr+1
+                sta dest+1
+
+                jsr    _GET_BYTE       ; ID kompresora - LZ4 = 0    aPLib = 1
+                cmp    #0
+                bne    *               ; JAM if not LZ4 no room for aPLib
+
+unlz4
+                  jsr    _GET_BYTE                  ; length of literals
+                  sta    token
+               :4 lsr
+                  beq    read_offset                     ; there is no literal
+                  cmp    #$0f
+                  jsr    getlength
+literals          jsr    _GET_BYTE
+                  jsr    store
+                  bne    literals
+read_offset       jsr    _GET_BYTE
+                  tay
+                  sec
+                  eor    #$ff
+                  adc    dest
+                  sta    src
+                  tya
+                  php
+                  jsr    _GET_BYTE
+                  plp
+                  bne    not_done
+                  tay
+                  beq    unlz4_wroc  ; ----------------------------------------
+not_done          eor    #$ff
+                  adc    dest+1
+                  sta    src+1
+                  ; c=1
+                  lda    #$ff
+token             equ    *-1
+                  and    #$0f
+                  adc    #$03                            ; 3+1=4
+                  cmp    #$13
+                  jsr    getLength
+
+@                 lda    $ffff
+src               equ    *-2
+                  inw    src
+                  jsr    store
+                  bne    @-
+                  beq    unlz4                           ; zawsze
+store             sta    $ffff
+dest              equ    *-2                    ; load_ptr
+                  inw    dest
+                  dec    lenL
+                  bne    @+ ;unlz4_done
+                  dec    lenH
+@                 rts
+getLength_next    jsr    _GET_BYTE
+                  tay
+                  clc
+                  adc    #$00
+lenL              equ    *-1
+                  bcc    @+
+                  inc    lenH
+@                 iny
+getLength         sta    lenL
+                  beq    getLength_next
+                  tay
+                  beq    @+
+                  inc    lenH
+@                 rts
+;lenH              .byte    $00
+
+
+_next_sector    lda buffer+SECTOR_SIZE-3
+                and #$03 ;      dla LZ4 brak miejsca     ;mydos16   ; odcina numer pliku dos2.5 lub nie dla MYDOSA
+                ldy buffer+SECTOR_SIZE-2
+                bne _READ_SECTOR
+                cmp #0              ; obydwa = 0 to eof
+                bne _READ_SECTOR    ;beq eof
+; eof 136
+                ldy #170        ; ujemny
+_ret            rts
+
+_READ_SECTOR    sta DAUX2       ; daux2   ; >
+                sty DAUX1       ; daux1   ; <
+                lda     #$40    ; read
+                sta     dstats
+                ldx #'R'                ; $52 - read sector
+                stx DCOMND        ; dcomnd
+                jmp SIOINI      ; y=1 ok
+
+
+_GET_BYTE       ldy buffer_ofs
+                cpy buffer+SECTOR_SIZE-1
+                bcc read_get                ;A<M c=0
+                jsr _next_sector
+                bmi read_ret
+                ldy #0
+read_get    lda buffer,y    ; RELOC
+density3        equ *-2
+                iny
+                sty buffer_ofs
+
+                ldy #1
+read_ret        rts
+
+sdeddd          .byte   $53,$40,$80,$07,$07,$00,$04,$00
+
+BOOT_end        equ *
+              :384-(BOOT_end-BOOT) .byte $00
