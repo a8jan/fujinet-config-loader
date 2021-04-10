@@ -15,27 +15,28 @@
 ;  along with this program; if not, write to the Free Software
 ;  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-; useful labels
-	.include "hisio.inc"
-        
-; lz4bootloader labels
-DOLOAD  = $4B0
-SECLO   = $4B1
-SECHI   = $4B3
-JMPRUNV = $51C
-JMPSIO  = $5D3
-BUF     = $700
+; ; lz4 bootloader labels
+; DOLOAD  = $4B4
+; JMPRUNV = $51C
+; JMPSIO  = $5D3
+; BUFFER  = $700
+
+; zx0 bootloader labels
+    .IF .NOT .DEF PARTHI
+	.OPT NO OBJ
+        .include "zx0boot.src"
+	.OPT OBJ
+    .ENDIF
 
 ; some "colors"
         * = $02C4
         .BYTE $06, $0C, $04, $00, $04
 
-; ; place our code after picoboot loader ($980)
-;         * = PICOEND
-        * = $800
+; place our code after bootloader ($980)
+        * = BOOTEND
 
 ; Config start sector - update with real value !!!
-CFGSSEC .WORD 14
+CFGSSEC .WORD $15
 
 ; progress bar speed factor
 ; use cloader-updater.sh to update this field in compiled file, no need to recompile
@@ -44,7 +45,7 @@ CFGSSEC .WORD 14
 ;   blks: number of blocks to load
 ;   = (1 + px) * 256 / blks = (1 + 48) * 256 / 175 = 71
 ; PBSF    .BYTE 71
-CFGSIZE = 11243 ; 21865 ; config.com file size in bytes
+CFGSIZE = 21865 ; config.com file size in bytes
 PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
 
 ; include HSIO code
@@ -151,11 +152,11 @@ CLOADER
         RTS
 
 CALLSIO LDY #11
-?LO1    LDA SIOCMDS,X
+?CS1    LDA SIOCMDS,X
         STA DDEVIC,Y
         DEX
         DEY
-        BPL ?LO1
+        BPL ?CS1
 NE459   JMP $E459       ; will be updated to call HSIO
 
         CLLOEND = *

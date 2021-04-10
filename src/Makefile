@@ -8,7 +8,7 @@
 ATASM ?= atasm
 
 # PROGS = picoboot.bin cloader.bin cloader-nohs.bin
-PROGS = cloader.bin
+PROGS = zx0boot.bin cloader.bin 
 
 all: $(PROGS)
 
@@ -44,13 +44,15 @@ HISIOINC = hisio/hisio.inc hisio/hisiocode.src hisio/hisiodet.src \
 # cloader-nohs.bin: cloader.src $(PICOBOOTSRC) $(HISIOINC)
 # 	$(ATASM) $(ASMFLAGS) -gcloader-nohs.lst -o$@ $<
 
+zx0boot.bin: zx0boot.src
+	$(ATASM) $(ASMFLAGS) -r -gzx0boot.lst -o$@ $<
 
 # config loader low speed part - HSIO routines
-cloader-lo.obj: cloader-lo.src cloader-hi.src $(HISIOINC)
+cloader-lo.obj: cloader-lo.src cloader-hi.src zx0boot.src $(HISIOINC)
 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader-lo.lst -o$@ $<
 
 # config loader high speed part - Config load, display list, banner, progress bar
-cloader-hi.obj: cloader-hi.src cloader-lo.src $(HISIOINC)
+cloader-hi.obj: cloader-hi.src cloader-lo.src zx0boot.src $(HISIOINC)
 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -dPARTHI=1 -gcloader-hi.lst -o$@ $<
 
 cloader.bin: cloader-lo.obj cloader-hi.obj

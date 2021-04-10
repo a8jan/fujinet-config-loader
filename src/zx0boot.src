@@ -1,38 +1,49 @@
 ; ZX0 boot code
 
+;--------------------------------------------------
+
 LOADSECT        = 4             ; sector to start loading from
 
-RUNAD = $2e0
-INITAD = $2e2
-DSCTLN = $2d5
+RUNAD           = $2E0
+INITAD          = $2E2
+DSCTLN          = $2D5
+         
+; useful labels
+	.include "hisio.inc"
+        
+; DDEVIC          = $300
+; DUNIT           = $301
+; DCOMND          = $302
+; DSTATS          = $303
+; DBUFLO          = $304
+; DBUFHI          = $305
+; DTIMLO          = $306
+; DBYTLO          = $308
+; DBYTHI          = $309
+; DAUX1           = $30A
+; DAUX2           = $30B
+         
+; DSKINV          = $E453
+SIOV            = $E459
 
-DDEVIC = $300
-DUNIT = $301
-DCOMND = $302
-DSTATS = $303
-DBUFLO = $304
-DBUFHI = $305
-DTIMLO = $306
-DBYTLO = $308
-DBYTHI = $309
-DAUX1 = $30A
-DAUX2 = $30B
-
-DSKINV = $E453
-
-BUFFER          = $780          ; sector buffer
 UNPAC_PTR       = $43
 LOAD_PTR        = $45
 LOAD_END        = $47
 BUFFER_OFS      = $49           ; offset to current byte
 
-BOOT            = $0800
+BUFFER          = $780          ; sector buffer
+
+BOOTSTART       = $0800
 
 ;--------------------------------------------------
-        * = BOOT
-        .BYTE $78, $03
-        .WORD BOOT
+
+        * = BOOTSTART
+
+	.BYTE $78
+	.BYTE (BOOTEND-BOOTSTART+127)/128
+	.WORD BOOTSTART
         .WORD $E477
+
 ;--------------------------------------------------
         LDA #>BUFFER
         STA DBUFHI
@@ -41,6 +52,7 @@ BOOT            = $0800
         STA DSCTLN
         LDY #<LOADSECT
         LDA #>LOADSECT
+DOLOAD
         JSR READ_SECTOR
         LDY #$00
         STY BUFFER_OFS
@@ -77,6 +89,7 @@ BOOT            = $0800
         CPY LOAD_END
         SBC LOAD_END+1
         BCC ?LOAD2
+
 CALL_INIT
         LDA #>(?LOAD1-1)
         PHA
@@ -87,7 +100,8 @@ CALL_INIT
 RUN_IT
         LDA #$01
         STA $09
-        JMP (RUNAD)
+JMPRUNV JMP (RUNAD)
+
 ;--------------------------------------------------
 DZX0_STANDARD
                             ; A = 0
@@ -120,14 +134,14 @@ DZX0S_LITERALS
         INC UNPAC_PTR+1
 ?DZ1
         LDA #$FF
-LENL        = *-1
+LENL    = *-1
         BNE ?DZ2
         DEC LENH
 ?DZ2
         DEC LENL
         LDA LENL
         ORA #$FF
-LENH        = *-1
+LENH    = *-1
         BNE ?DZ0
         PLA
         ASL
@@ -141,11 +155,11 @@ DZX0S_COPY
         LDA UNPAC_PTR
         CLC
         ADC #$FF
-OFFSETL     = *-1
+OFFSETL = *-1
         STA LOAD_END
         LDA UNPAC_PTR+1
         ADC #$FF
-OFFSETH     = *-1
+OFFSETH = *-1
         STA LOAD_END+1
         LDY #$00
         LDX LENL
@@ -210,7 +224,6 @@ DZX0S_ELIAS
 DZX0S_ELIAS_LOOP
         ASL
         BNE DZX0S_ELIAS_SKIP
-        NOP
         JSR GET_BYTE
         SEC
         ROL
@@ -223,6 +236,7 @@ DZX0S_ELIAS_BACKTRACK
         ROL LENL
         ROL LENH
         JMP DZX0S_ELIAS_LOOP
+
 ;--------------------------------------------------
 NEXT_SECTOR
         LDA BUFFER+125
@@ -232,26 +246,33 @@ NEXT_SECTOR
         CMP #$00
         BNE READ_SECTOR
         LDY #$AA
-DO_RTS                      RTS
+DO_RTS  RTS
 ;--------------------------------------------------
 READ_SECTOR
         STA DAUX2
         STY DAUX1
-        LDX #$52
+        LDA #$40        ; read direction
+        STA DSTATS
+        LDX #$52        ; 'R - read sector
         STX DCOMND
-        JMP DSKINV
+JMPSIO  JMP SIOV
 ;--------------------------------------------------
 GET_BYTE
         LDY BUFFER_OFS
         CPY BUFFER+127
-        BCC $096E
+        BCC ?GB0
         JSR NEXT_SECTOR
         BMI ?GB1
         LDY #$00
-        LDA BUFFER,Y
+?GB0    LDA BUFFER,Y
         INY
         STY BUFFER_OFS
         LDY #$01
-?GB1
-        RTS
+?GB1    RTS
 ;--------------------------------------------------
+
+	.IF ((*-BOOTSTART)&127)<>0
+	.DC (128-((*-BOOTSTART)&127)) 0
+	.ENDIF
+
+BOOTEND	= *

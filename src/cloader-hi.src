@@ -18,6 +18,7 @@
     .IF .DEF PARTHI
 ; get labels from low speed part
 	.OPT NO OBJ
+        .include "zx0boot.src"
         .include "cloader-lo.src"
 	.OPT OBJ
     .ENDIF
@@ -60,19 +61,14 @@ LOACFG
         STA JMPSIO+1
         LDA #>RREADPB
         STA JMPSIO+2
-; ; release stack a bit
-;         LDX #$FB
-;         TXS
-; load Config
-	LDA CFGSSEC     ; Config start sector
-	STA SECLO
-	LDA CFGSSEC+1
-	STA SECHI
 ; after load continue at CLEANUP
         LDA #<CLNVEC
         STA JMPRUNV+1
         LDA #>CLNVEC
         STA JMPRUNV+2
+; load Config
+	LDY CFGSSEC     ; Config start sector
+	LDA CFGSSEC+1
         JMP DOLOAD
 
 CLEANUP
@@ -131,7 +127,8 @@ RREADPB CLC
 
 
 ; video memory
-VRAM    = $0CE0
+;VRAM    = $0CE0
+VRAM    = $0DE0
 ; progress bar address
 PBAR    = VRAM+10
 ; logo address
@@ -142,10 +139,10 @@ DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
         .BYTE 15+64, <BANNER, >BANNER
         .BYTE 15, 15, 15, 15, 15, 15, 15
         .BYTE 15, 15, 15, 15, 15, 15, 15, 15
-        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
         ; 4K boundary
-        .BYTE 15+64, <(VRAM+800), >(VRAM+800)
+        .BYTE 15+64, <$1000, >$1000
         .BYTE 15, 15, 15, 15, 15, 15, 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
         .BYTE 112, 112
         ; progress bar area
         .BYTE 13+64, <VRAM, >VRAM
