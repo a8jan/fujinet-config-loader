@@ -33,7 +33,7 @@ BUFFER_OFS      = $49           ; offset to current byte
 
 BUFFER          = $780          ; sector buffer
 
-BOOTSTART       = $0800
+BOOTSTART       = $800
 
 ;--------------------------------------------------
 
@@ -56,7 +56,7 @@ DOLOAD
         JSR READ_SECTOR
         LDY #$00
         STY BUFFER_OFS
-?LOAD1
+LOAD1
         JSR GET_BYTE
         BMI RUN_IT
         STA LOAD_PTR
@@ -64,7 +64,7 @@ DOLOAD
         STA LOAD_PTR+1
         AND LOAD_PTR
         CMP #$FF
-        BEQ ?LOAD1
+        BEQ LOAD1
 
         LDA #<DO_RTS
         STA INITAD
@@ -91,9 +91,11 @@ DOLOAD
         BCC ?LOAD2
 
 CALL_INIT
-        LDA #>(?LOAD1-1)
+        LDA #>(LOAD1-1)
+RFINITH = *-1
         PHA
-        LDA #<(?LOAD1-1)
+        LDA #<(LOAD1-1)
+RFINITL = *-1
         PHA
         JMP (INITAD)
 ;--------------------------------------------------
@@ -104,7 +106,7 @@ JMPRUNV JMP (RUNAD)
 
 ;--------------------------------------------------
 DZX0_STANDARD
-                            ; A = 0
+        ; A = 0
         STA LENL
         STA LENH
         LDA LOAD_PTR

@@ -47,11 +47,11 @@ HISIOINC = hisio/hisio.inc hisio/hisiocode.src hisio/hisiodet.src \
 zx0boot.bin: zx0boot.src
 	$(ATASM) $(ASMFLAGS) -r -gzx0boot.lst -o$@ $<
 
-# config loader low speed part - HSIO routines
+# config loader low speed part - contains HSIO routines
 cloader-lo.obj: cloader-lo.src cloader-hi.src zx0boot.src $(HISIOINC)
 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader-lo.lst -o$@ $<
 
-# config loader high speed part - Config load, display list, banner, progress bar
+# config loader high speed part - Config load using hybrid loader, display list, progress bar, banner
 cloader-hi.obj: cloader-hi.src cloader-lo.src zx0boot.src $(HISIOINC)
 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -dPARTHI=1 -gcloader-hi.lst -o$@ $<
 

@@ -1,4 +1,6 @@
-;  cloader - Config loader for FujiNet, loads CONFIG.COM using HSIO routines
+;  cloader - Config loader for FujiNet
+;    loads CONFIG.COM with high speed SIO and does in-line decompression with ZX0
+;
 ;  2021 apc.atari@gmail.com
 ;
 ;  This program is free software; you can redistribute it and/or modify
@@ -56,7 +58,15 @@ LOACFG
 ?PB     STA PBAR,x
         DEX
         BPL ?PB
-; patch COM/LZ4 loader to update progress bar
+; patch loader to support hybrid file hints (2DF-2E1)
+        LDA #<(HYBLOAD-1)
+        STA RFINITL
+        LDA #>(HYBLOAD-1)
+        STA RFINITH
+        ; reset hint byte
+        LDA #$FF
+        STA $2DF
+; patch loader to update progress bar
         LDA #<RREADPB
         STA JMPSIO+1
         LDA #>RREADPB
@@ -73,17 +83,7 @@ LOACFG
 
 CLEANUP
 ; some cleanup here
-
-;     .IF .DEF HIGHSPEED
-; ; restore HSIO index to saved value
-;         LDA HISAV
-;         BMI ?NOHS2
-;         STA HIVAL
-;         LDX #SETHICMD-SIOCMDS+11
-;         JSR CALLSIO
-; ?NOHS2
-;     .ENDIF
-
+;
 ; restore Display List
         LDA #0
         STA $D40E       ; disable NMI
@@ -103,6 +103,34 @@ CLEANUP
         BEQ ?WVBI2      ; wait for next completed VBI
         ; start Config
         JMP ($2E0)
+
+
+HYBLOAD
+; hybrid file loader
+        LDX #$FF
+        LDA $2DF
+        BNE ?HL1
+        ; 0 = stop loading and run programm
+        JMP RUN_IT
+?HL1    CMP #1
+        BNE ?HL2
+        ; reset hint byte
+        STX $2DF
+        ; 1 = next segment is compressed
+        ; ignore next 4 bytes = segment start,end addresses for DOS
+        JSR GET_BYTE
+        JSR GET_BYTE
+        JSR GET_BYTE
+        JSR GET_BYTE
+        ; load and decompress data to address in 2E0-2E1
+        LDA $2E0
+        STA LOAD_PTR
+        LDA $2E1
+        STA LOAD_PTR+1
+        LDA #0
+        JMP DZX0_STANDARD ; A = 0
+?HL2    ; no hint recognized , continue loading
+        JMP LOAD1
 
 
 ; progress bar update + read sector
@@ -151,7 +179,6 @@ DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
 LOADEREND = *
 
         * = BANNER
-        ; * = $0E20
         .incbin "../data/cloader.dat"
 
 ; init address

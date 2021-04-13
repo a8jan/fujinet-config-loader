@@ -1,4 +1,6 @@
-;  cloader - Config loader for FujiNet, loads CONFIG.COM using HSIO routines
+;  cloader - Config loader for FujiNet
+;    loads CONFIG.COM with high speed SIO and does in-line decompression with ZX0
+;
 ;  2021 apc.atari@gmail.com
 ;
 ;  This program is free software; you can redistribute it and/or modify
@@ -15,28 +17,25 @@
 ;  along with this program; if not, write to the Free Software
 ;  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-; ; lz4 bootloader labels
-; DOLOAD  = $4B4
-; JMPRUNV = $51C
-; JMPSIO  = $5D3
-; BUFFER  = $700
-
-; zx0 bootloader labels
+; get zx0 bootloader labels
     .IF .NOT .DEF PARTHI
 	.OPT NO OBJ
         .include "zx0boot.src"
 	.OPT OBJ
     .ENDIF
+; used bootloader labels
+;
+; DOLOAD
+; LOAD1
+; JMPRUNV
+; JMPSIO
+; BUFFER
+; RFINITL, RFINITH
 
 ; some "colors"
-        * = $02C4
-        .BYTE $06, $0C, $04, $00, $04
-
-; place our code after bootloader ($980)
-        * = BOOTEND
-
+        * = $02C2
 ; Config start sector - update with real value !!!
-CFGSSEC .WORD $15
+CFGSSEC .WORD $0D
 
 ; progress bar speed factor
 ; use cloader-updater.sh to update this field in compiled file, no need to recompile
@@ -45,8 +44,16 @@ CFGSSEC .WORD $15
 ;   blks: number of blocks to load
 ;   = (1 + px) * 256 / blks = (1 + 48) * 256 / 175 = 71
 ; PBSF    .BYTE 71
-CFGSIZE = 21865 ; config.com file size in bytes
+CFGSIZE = 8783 ; config.com file size in bytes
 PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
+
+; colors
+        .BYTE $06, $0C, $04, $00, $04
+
+
+
+; place our code after bootloader ($980)
+        * = BOOTEND
 
 ; include HSIO code
     .IF .DEF HIGHSPEED
@@ -81,28 +88,6 @@ GETHICMD
 	.WORD $0000		; DAUX = 0
     .ENDIF
 
-; SETHICMD
-; 	.BYTE $70		; DDEVIC = $70 (Fuji)
-; 	.BYTE $01		; DUNIT = 1
-; 	.BYTE $E3		; DCOMND = Set high speed
-; 	.BYTE $40		; DSTATS = -> ATARI
-; 	.WORD $0000 		; DBUF
-; 	.BYTE $03		; DTIMLO = 3 seconds
-; 	.BYTE $00		; DRESVD = $00
-; 	.WORD 0			; no data bytes
-; HIVAL	.WORD $0000		; AUX1 = 0 - index, AUX2 = 0 - do not save
-
-; READCMD
-; 	.BYTE $31		; DDEVIC = D
-; 	.BYTE $01		; DUNIT = D1
-; 	.BYTE $52		; DCOMND = Read
-; 	.BYTE $40		; DSTATS = -> ATARI
-; 	.WORD BUF 		; DBUF
-; 	.BYTE $07		; DTIMLO = 7 seconds
-; 	.BYTE $00		; DRESVD = $00
-; 	.WORD $0080            	; 128 bytes
-; 	.WORD $0169		; DAUX = sector #
-
 CMDSAVE
 	.WORD 0 		; DBUF
 	.BYTE 0 		; DTIMLO
@@ -122,16 +107,6 @@ CLOADER
         LDX #GETHICMD-SIOCMDS+11
         JSR CALLSIO
         BMI ?NOHS1
-        ; ; set index to 0
-        ; LDA #0
-        ; STA SIOSPEED
-        ; LDX #SETHICMD-SIOCMDS+11
-        ; JSR CALLSIO
-        ; BPL ?CL1
-        ; ; failed to set HSIO index to 0, use what we get
-        ; LDA HISAV
-        ; STA SIOSPEED
-; ?CL1
         ; redirect SIO to HSIO, patch COM/LZ4 loader
         LDA #<DOHISIO
         STA NE459+1
