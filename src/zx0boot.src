@@ -1,12 +1,16 @@
-; ZX0 boot code
-
+; ZX0 boot - zx0 boot loader
+;
+; ZX0 decompressor for 6502 - https://xxl.atari.pl/zx0-decompressor/
+; ZX0 project - https://github.com/einar-saukas/ZX0
+;
+; ATASM version for FujiNet Config Loader
+; 2021 apc.atari@gmail.com
 ;--------------------------------------------------
 
 LOADSECT        = 4             ; sector to start loading from
 
 RUNAD           = $2E0
 INITAD          = $2E2
-DSCTLN          = $2D5
          
 ; useful labels
 	.include "hisio.inc"
@@ -22,20 +26,19 @@ DSCTLN          = $2D5
 ; DBYTHI          = $309
 ; DAUX1           = $30A
 ; DAUX2           = $30B
-         
-; DSKINV          = $E453
-SIOV            = $E459
 
 UNPAC_PTR       = $43
 LOAD_PTR        = $45
 LOAD_END        = $47
-BUFFER_OFS      = $49           ; offset to current byte
 
+BUFFER_OFS      = $49           ; offset to current byte
 BUFFER          = $780          ; sector buffer
 
-BOOTSTART       = $800
+
 
 ;--------------------------------------------------
+
+BOOTSTART       = $800
 
         * = BOOTSTART
 
@@ -49,7 +52,6 @@ BOOTSTART       = $800
         STA DBUFHI
         LDA #<BUFFER
         STA DBUFLO
-        STA DSCTLN
         LDY #<LOADSECT
         LDA #>LOADSECT
 DOLOAD
@@ -105,172 +107,9 @@ RUN_IT
 JMPRUNV JMP (RUNAD)
 
 ;--------------------------------------------------
-DZX0_STANDARD
-        ; A = 0
-        STA LENL
-        STA LENH
-        LDA LOAD_PTR
-        STA UNPAC_PTR
-        LDA LOAD_PTR+1
-        STA UNPAC_PTR+1
-        JSR GET_BYTE
-        CMP #$02
-?HANG
-        BNE ?HANG
-        LDA #$FF
-        STA OFFSETL
-        STA OFFSETH
-        LDA #$80
 
-; Literal (copy next N bytes from compressed file)
-; 0  Elias(length)  byte[1]  byte[2]  ...  byte[N]
-DZX0S_LITERALS
-        JSR DZX0S_ELIAS
-        PHA
-?DZ0
-        JSR GET_BYTE
-        LDY #$00
-        STA (UNPAC_PTR),Y
-        INC UNPAC_PTR
-        BNE ?DZ1
-        INC UNPAC_PTR+1
-?DZ1
-        LDA #$FF
-LENL    = *-1
-        BNE ?DZ2
-        DEC LENH
-?DZ2
-        DEC LENL
-        LDA LENL
-        ORA #$FF
-LENH    = *-1
-        BNE ?DZ0
-        PLA
-        ASL
-        BCS DZX0_NEW_OFFSET
+        .include "dzx0.src"
 
-; Copy from last offset (repeat N bytes from last offset)
-; 0  Elias(length)
-        JSR DZX0S_ELIAS
-DZX0S_COPY
-        PHA
-        LDA UNPAC_PTR
-        CLC
-        ADC #$FF
-OFFSETL = *-1
-        STA LOAD_END
-        LDA UNPAC_PTR+1
-        ADC #$FF
-OFFSETH = *-1
-        STA LOAD_END+1
-        LDY #$00
-        LDX LENL
-PAGE
-        LDA (LOAD_END),Y
-        STA (UNPAC_PTR),Y
-        INC UNPAC_PTR
-        BNE ?DZ3
-        INC UNPAC_PTR+1
-?DZ3
-        INC LOAD_END
-        BNE ?DZ4
-        INC LOAD_END+1
-?DZ4
-        DEX
-        BNE PAGE
-        DEC LENH
-        BPL PAGE
-        STX LENH
-        STX LENL
-        PLA
-        ASL
-        BCC DZX0S_LITERALS
-
-; Copy from new offset (repeat N bytes from new offset)
-; 1  Elias(MSB(offset))  LSB(offset)  Elias(length-1)
-DZX0_NEW_OFFSET    
-        JSR DZX0S_ELIAS
-        PHA
-        PHP
-        LDA #$00
-        SEC
-        SBC LENL
-        STA OFFSETH
-        BNE ?DZ5
-        PLP
-        PLA
-        JMP CALL_INIT
-
-?DZ5
-        JSR GET_BYTE
-        PLP
-        STA OFFSETL
-        ROR OFFSETH
-        ROR OFFSETL
-        LDX #$00
-        STX LENH
-        INX
-        STX LENL
-        PLA
-        BCS ?DZ6
-        JSR DZX0S_ELIAS_BACKTRACK
-?DZ6
-        INC LENL
-        BNE ?DZ7
-        INC LENH
-?DZ7
-        JMP DZX0S_COPY
-;--------------------------------------------------
-DZX0S_ELIAS
-        INC LENL
-DZX0S_ELIAS_LOOP
-        ASL
-        BNE DZX0S_ELIAS_SKIP
-        JSR GET_BYTE
-        SEC
-        ROL
-DZX0S_ELIAS_SKIP
-        BCC DZX0S_ELIAS_BACKTRACK
-        RTS
-;--------------------------------------------------
-DZX0S_ELIAS_BACKTRACK
-        ASL
-        ROL LENL
-        ROL LENH
-        JMP DZX0S_ELIAS_LOOP
-
-;--------------------------------------------------
-NEXT_SECTOR
-        LDA BUFFER+125
-        AND #$03
-        LDY BUFFER+126
-        BNE READ_SECTOR
-        CMP #$00
-        BNE READ_SECTOR
-        LDY #$AA
-DO_RTS  RTS
-;--------------------------------------------------
-READ_SECTOR
-        STA DAUX2
-        STY DAUX1
-        LDA #$40        ; read direction
-        STA DSTATS
-        LDX #$52        ; 'R - read sector
-        STX DCOMND
-JMPSIO  JMP SIOV
-;--------------------------------------------------
-GET_BYTE
-        LDY BUFFER_OFS
-        CPY BUFFER+127
-        BCC ?GB0
-        JSR NEXT_SECTOR
-        BMI ?GB1
-        LDY #$00
-?GB0    LDA BUFFER,Y
-        INY
-        STY BUFFER_OFS
-        LDY #$01
-?GB1    RTS
 ;--------------------------------------------------
 
 	.IF ((*-BOOTSTART)&127)<>0

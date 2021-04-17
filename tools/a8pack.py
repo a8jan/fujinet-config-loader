@@ -33,11 +33,15 @@ PACK_LZ4 = 0x00
 PACK_APL = 0x01
 PACK_ZX0 = 0x02
 
+REL_WORD = 0x80
+REL_HIGH = 0x40
+REL_LOW  = 0x20
+
 packers = {
     # packer code: name, packer command
     PACK_LZ4: ("LZ4", ("TBD", "{filein}", "{fileout}")),
     PACK_APL: ("APL", ("TBD", "{filein}", "{fileout}")),
-    PACK_ZX0: ("ZX0", ("packers/zx0", "-f", "{filein}", "{fileout}")),
+    PACK_ZX0: ("ZX0", ("zx0", "-f", "{filein}", "{fileout}"), "zx0unpack.obj"),
 }
 
 
@@ -110,13 +114,14 @@ class Segment:
         if self.type != SEGMENT_DATA:
             print(f"pack: bad segment type {self.type}")
             return None
-        cmd_template = packers.get(packer, (None, None))[1]
+        pn, cmd_template, up_template = packers.get(packer, (None, None, None))
         if cmd_template is None:
             print(f"pack: unknown packer {packer:02X}")
             return None
-        tmpin = "0.dat" if tempfilename is None else tempfilename
-        tmpout = tmpin+".zx0"
+        tmpin = f"tmp-{self.start:04X}" if tempfilename is None else tempfilename
+        tmpout = tmpin+"."+pn
         cmd = [arg.format(filein=tmpin, fileout=tmpout) for arg in cmd_template]
+        cmd[0] = os.path.join(os.path.dirname(__file__), "pack", cmd[0])
         segment = None
         out = None
         with open(tmpin, 'wb') as fout:
@@ -134,9 +139,67 @@ class Segment:
                 segment = Segment(SEGMENT_PACKED, self.start, 0)
                 segment.packer = packer
                 segment.data = data
-                segment.decomp_offset = self.len() - len(data) + 3 # TODO get offset from packer
+                segment.decomp_offset = self.len() - len(data) + 3 # TODO get offset from packer output
             os.unlink(tmpout)
         os.unlink(tmpin)
+        return segment
+
+
+    def relocate(self, offset, table):
+        #offset = addr - self.start # relocation offset
+        # create reloaceted segment
+        if self.run_addr() is None and self.init_addr() is None:
+            # update load address by offset
+            segment = Segment(self.type, self.start + offset, self.end + offset)
+        else:
+            # for RUN or INIT keep original load address
+            segment = Segment(self.type, self.start, self.end)
+        # copy data bytes
+        segment.data = bytearray(self.data)
+        # do relocation
+        rel = -1 # relocation "pointer" to data
+        ti = 0   # relocation table index
+        while ti < len(table):
+            ro = table[ti] # relative relocation offset
+            ti += 1
+            if ro == 0:
+                # 0 = end of table, relocation is done
+                break
+            if ro == 255:
+                # update pointer, get next relative offset
+                rel += 254
+                continue
+            # update pointer by relative offset
+            rel += ro
+            # get relocation type byte: REL_WORD, REL_LOW, REL_High
+            if ti >= len(table):
+                print("Unexpected end of relocation table")
+                break
+            rtype = table[ti]
+            ti += 1
+            if rtype == REL_WORD:
+                # update word
+                w = struct.unpack('<H', segment.data[rel:rel+2])[0]
+                w = (w + offset) & 0xFFFF
+                segment.data[rel] = w & 0xFF
+                segment.data[rel+1] = w >> 8
+            elif rtype == REL_LOW:
+                # update low byte
+                b = segment.data[rel]
+                b = (b + offset) & 0xFF
+                segment.data[rel] = b
+            elif rtype == REL_HIGH:
+                # update high byte
+                if ti >= len(table):
+                    print("Unexpected end of relocation table")
+                    break
+                # build original word, get low byte from table
+                w = segment.data[rel] << 8 | table[ti]
+                ti += 1
+                # apply offset
+                w = (w + offset) & 0xFFFF
+                # store high byte
+                segment.data[rel] = w >> 8
         return segment
 
 
@@ -202,6 +265,13 @@ class AtariDosObject:
         with open(filename, 'wb') as fout:
             for s in self.segments:
                 s.write(fout)
+        return self
+
+
+    def merge(self, obj):
+        for s in obj.segments:
+            if s.type != SEGMENT_SIGNATURE:
+                self.segments.append(s)
         return self
 
 
@@ -285,10 +355,35 @@ class AtariDosObject:
         return obj
 
 
+    def relocate(self, addr):
+        """Relocate segments using segments with relocation table"""
+        obj = AtariDosObject()
+        i = 0
+        offset = 0
+        while i < len(self.segments):
+            s = self.segments[i]
+            # test if relocation hint and relocation table follows this segment
+            if i+2 < len(self.segments) and self.segments[i+1].hint_byte() == 2:
+                # yes, we can relocate
+                if s.init_addr() is None and s.run_addr() is None:
+                    offset = addr - s.start
+                    print(f"Relocating segment {i} ({s.start:04X}->{addr:04X} offset {offset:04X}) with table from segment {i+2}")
+                else:
+                    print(f"Relocating segment {i} ({s.start:04X}->{s.start:04X} offset {offset:04X}) with table from segment {i+2}")
+                s = s.relocate(offset, self.segments[i+2].data)
+                # skip hint and table segments
+                i += 2
+            obj.segments.append(s)
+            # next segment
+            i += 1
+        return obj
+
+
     def hybridize(self, stop_run=True):
         """Make packed segments DOS friendly"""
         obj = AtariDosObject()
         run_addr = None
+        unpack = []
         for i,s in enumerate(self.segments):
             if s.type == SEGMENT_PACKED:
                 print(f"Hybridizing packed segment {i}")
@@ -300,6 +395,8 @@ class AtariDosObject:
                 s3 = Segment(SEGMENT_DATA, load_addr, load_addr + s.datalen() - 1 + 1) # 1 byte packer code
                 s3.data = struct.pack('B', s.packer) + s.data
                 obj.segments.append(s3)
+                # keep list of segments which needs to be unpacked
+                unpack.append((s, s3))
             elif s.type == SEGMENT_DATA and s.run_addr() is not None:
                 run_addr = s.run_addr()
                 if stop_run:
@@ -328,12 +425,27 @@ class AtariDosObject:
             s = Segment(SEGMENT_DATA, 0x2DF, 0x2E1)
             s.data = b'\x00' + struct.pack('<H', run_addr)
             obj.segments.append(s)
+        # append unpacker and call it for all packed segments
+        if unpack:
+            print("Appending decompressor")
+            packer = unpack[0][0].packer
+            pn, cmd_template, un_template = packers.get(packer, (None, None, None))
+            unpacker_name = un_template
+            unpacker_addr = max([s.end+1 for s in obj.segments])
+            unpacker_file = os.path.join(os.path.dirname(__file__), "pack", "a8", unpacker_name)
+            unpacker = AtariDosObject().load(unpacker_file).relocate(unpacker_addr)
+            # TODO modify segment, set parameters COMP_DATA and DECOMP_TO
+            pass
+            # TODO add more segments if more segments needs to be decompressed:
+            # re-load COMP_DATA and DECOMP_TO parameters, add INIT to call unpacker
+            obj.merge(unpacker)
         return obj
 
 
     def print_info(self):
         data_bytes = 0
         control_bytes = 0
+        print("\nFile segments")
         for i,s in enumerate(self.segments):
             if s.type == SEGMENT_SIGNATURE:
                 control_bytes += 2
@@ -347,10 +459,11 @@ class AtariDosObject:
                 init_text = "" if init_addr is None else f" INIT {init_addr:04X}"
 
                 run_addr = s.run_addr()
-                if run_addr is None:
-                    run_text = ""
-                else:
-                    hint_byte = s.hint_byte()
+                hint_byte = s.hint_byte()
+                run_text = ""
+                if hint_byte == 2:
+                    run_text = " RELOCATE"
+                if run_addr is not None:
                     if hint_byte is None:
                         run_text = f" RUN {run_addr:04X}"
                     else:
@@ -364,7 +477,7 @@ class AtariDosObject:
                 )
 
             elif s.type == SEGMENT_PACKED:
-                control_bytes += 4
+                control_bytes += 5
                 data_bytes += s.datalen()
                 p = packers.get(s.packer)
                 pname = p[0] if p else "unknown"
@@ -376,24 +489,110 @@ class AtariDosObject:
 
 
 def main():
-    input_fname = sys.argv[1]
-    output_fname = sys.argv[2]
+    o_verbose = False
+    o_initfix = False
+    a_filein = None
+    a_fileout = None
+    action = ''
 
-    obj = AtariDosObject().load(input_fname)
-    obj.print_info()
+    for arg in sys.argv[1:]:
+        if arg == '-v':
+            o_verbose = True
+        elif arg == '-f':
+            o_initfix = True
+        elif arg == '-i':
+            action = 'info'
+        elif arg == '-c':
+            action = 'pack'
+        elif arg == '-d':
+            action = 'packhybrid'
+        elif arg == '-h':
+            action = 'help'
+        elif arg[0] == '-':
+            print(f'Unknown option: "{arg}"')
+            sys.exit(1)
+        else:
+            if a_filein is None:
+                a_filein = arg
+            elif a_fileout is None:
+                a_fileout = arg
+            else:
+                print(f'Extra parameter: "{arg}"')
+                sys.exit(1)
 
-    obj = obj.fix_init_order()
-    obj.print_info()
+    if not action:
+        action = 'initfix' if o_initfix else 'help'
 
-    obj = obj.pack(PACK_ZX0)
-    obj.print_info()
+    if action == 'help':
+        print_help()
+        sys.exit(0)
+    elif action == 'pack' or action == 'packhybrid':
+        if a_filein is None or a_fileout is None:
+            print("To compress a file an input and output file names must be specified.")
+            sys.exit(1)
+    elif a_filein is None: # action == 'info'
+        print("Input file names must be specified.")
+        sys.exit(1)
 
-    obj = obj.hybridize()
-    obj.print_info()
+    # read input file
+    obj = AtariDosObject().load(a_filein)
 
-    obj.save(output_fname)
+    #
+    # perfrom action
+    #
+    if action == 'info':
+        obj.print_info()
+
+    elif action == 'initfix':
+        if o_verbose:  obj.print_info()
+
+        obj = obj.fix_init_order()
+        if o_verbose: obj.print_info()
+
+        obj.save(a_fileout)
+
+    elif action == 'pack':
+        if o_verbose:  obj.print_info()
+
+        if o_initfix:
+            obj = obj.fix_init_order()
+            if o_verbose: obj.print_info()
+
+        obj = obj.pack(PACK_ZX0)
+        if o_verbose: obj.print_info()
+
+        obj.save(a_fileout)
+
+    elif action == 'packhybrid':
+        if o_verbose:  obj.print_info()
+
+        if o_initfix:
+            obj = obj.fix_init_order()
+            if o_verbose: obj.print_info()
+
+        obj = obj.pack(PACK_ZX0)
+        if o_verbose: obj.print_info()
+
+        obj = obj.hybridize()
+        if o_verbose: obj.print_info()
+
+        obj.save(a_fileout)
+
+
+def print_help():
+    print("""Packer for Atari 8-bit. Use to compress segmented Atari DOS files.
+Usage: a8pack.py [options] input_file [output_file]
+  -i      Print file info
+  -c      Compress file segments
+          to load a file a special loader which supports decompression is needed
+  -d      Compress file segments, append decompression routine
+          produced file is in Atari DOS compatible format
+  -f      Fix order of INIT segments (for files produced by ATASM)
+          Can be combined with -c or -d
+  -v      Verbose output
+  -h      Print this help
+""")
 
 
 if __name__ == '__main__':
     main()
-

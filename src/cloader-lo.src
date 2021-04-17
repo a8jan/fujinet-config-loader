@@ -32,9 +32,10 @@
 ; BUFFER
 ; RFINITL, RFINITH
 
-; some "colors"
-        * = $02C2
-; Config start sector - update with real value !!!
+; some "colors" (not only colors)
+        * = $02C1
+
+; CONFIG.COM start sector - update with real value !!!
 CFGSSEC .WORD $0D
 
 ; progress bar speed factor
@@ -44,12 +45,11 @@ CFGSSEC .WORD $0D
 ;   blks: number of blocks to load
 ;   = (1 + px) * 256 / blks = (1 + 48) * 256 / 175 = 71
 ; PBSF    .BYTE 71
-CFGSIZE = 8783 ; config.com file size in bytes
+CFGSIZE = 8783 ; CONFIG.COM file size in bytes (without bundled depacker)
 PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
 
-; colors
+; colors - 2C4-2C8
         .BYTE $06, $0C, $04, $00, $04
-
 
 
 ; place our code after bootloader ($980)
@@ -74,11 +74,8 @@ SEC2PB  .BYTE 0                 ; sector count to progress bar update
 DLSAV   .WORD 0                 ; original display list address
 CLNVEC  .WORD CLEANUP           ; our RUN hook, for cleanup prior starting Config
 
-SIOCMDS
     .IF .DEF HIGHSPEED
 GETHICMD
-	.BYTE $31		; DDEVIC = D
-	.BYTE $01		; DUNIT = D1
 	.BYTE $3F		; DCOMND = Get high speed
 	.BYTE $40		; DSTATS = -> ATARI
 	.WORD HISAV 		; DBUF
@@ -104,9 +101,13 @@ CLOADER
         DEX
         BPL ?SAV1
         ; get HSIO index, to HISAV
-        LDX #GETHICMD-SIOCMDS+11
-        JSR CALLSIO
-        BMI ?NOHS1
+        LDX #9
+?CS1    LDA GETHICMD,X
+        STA DDEVIC+2,X
+        DEX
+        BPL ?CS1
+        JSR NE459
+        BMI ?NOHS1      ; -> high speed not supported by device
         ; redirect SIO to HSIO, patch COM/LZ4 loader
         LDA #<DOHISIO
         STA NE459+1
@@ -126,12 +127,6 @@ CLOADER
         ; pass control to boot loader code
         RTS
 
-CALLSIO LDY #11
-?CS1    LDA SIOCMDS,X
-        STA DDEVIC,Y
-        DEX
-        DEY
-        BPL ?CS1
 NE459   JMP $E459       ; will be updated to call HSIO
 
         CLLOEND = *

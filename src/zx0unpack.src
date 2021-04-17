@@ -1,0 +1,26 @@
+; ZX0 in memory unpacker
+;
+; ZX0 decompressor for 6502 - https://xxl.atari.pl/zx0-decompressor/
+; ZX0 project - https://github.com/einar-saukas/ZX0
+;
+; ATASM version for FujiNet Config Loader
+; 2021 apc.atari@gmail.com
+;--------------------------------------------------
+
+UNPAC_PTR       = $43
+; LOAD_PTR        = $45
+LOAD_END        = $47
+
+;--------------------------------------------------
+
+        * = UNPACKSTART
+
+ZX0UNPACK
+        .include "dzx0.src"
+
+UNPACKEND = *
+
+        * = $2E2
+        .WORD DZX0_STANDARD
+
+;--------------------------------------------------
