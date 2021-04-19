@@ -33,7 +33,7 @@ zx0boot.bin: zx0boot.src dzx0.src
 	@echo "Building boot loader"
 	$(ATASM) $(ASMFLAGS) -r -gzx0boot.lst -o$@ $<
 
-# config loader low part - contains HSIO routines and INIT to activate them
+# config loader low part - contains HISIO routines and INIT to activate them
 cloader-lo.obj: cloader-lo.src cloader-hi.src zx0boot.src dzx0.src $(HISIOINC)
 	@echo "Building config loader - low part"
 	$(ATASM) $(ASMFLAGS) -dHIGHSPEED=1 -gcloader-lo.lst -o$@ $<

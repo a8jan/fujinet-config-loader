@@ -150,7 +150,7 @@ class Segment:
 
     def relocate(self, offset, table, header=True):
         # print(offset, table)
-        # create reloaceted segment
+        # create relocated segment
         if header:
             # update load start/end addresses in segment header
             segment = Segment(self.type, self.start + offset, self.end + offset)

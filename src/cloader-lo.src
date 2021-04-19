@@ -57,14 +57,14 @@ PBSF    .BYTE $FF ; placeholder
 ; place our code after bootloader ($980)
         * = BOOTEND
 
-; include HSIO code
+; include HISIO code
     .IF .DEF HIGHSPEED
 	SIOADR = *
 	FASTVBI=1
 	HISIO_MYPICODOS=1
 	.include "hisiocode.src"
 	SIOEND = *
-; HSIO index retrieved from D1
+; HISIO index retrieved from D1
 ; HISAV   .BYTE $FF       ; >=128 no high speed
 HISAV   = SIOSPEED
 SIOSPEED .BYTE $FF
@@ -102,7 +102,7 @@ CLOADER
         STA CMDSAVE,X
         DEX
         BPL ?SAV1
-        ; get HSIO index, to HISAV
+        ; get HISIO index, to HISAV
         LDX #9
 ?CS1    LDA GETHICMD,X
         STA DDEVIC+2,X
@@ -110,7 +110,7 @@ CLOADER
         BPL ?CS1
         JSR NE459
         BMI ?NOHS1      ; -> high speed not supported by device
-        ; redirect SIO to HSIO, patch COM/ZX0 loader
+        ; redirect SIO to HISIO, patch COM/ZX0 loader
         LDA #<DOHISIO
         STA NE459+1
         STA JMPSIO+1
@@ -129,7 +129,7 @@ CLOADER
         ; pass control to boot loader code
         RTS
 
-NE459   JMP $E459       ; will be updated to call HSIO
+NE459   JMP $E459       ; will be updated to call HISIO
 
         CLLOEND = *
 
