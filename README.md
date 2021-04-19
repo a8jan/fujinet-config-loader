@@ -21,7 +21,7 @@ The config loader is loaded and started by boot loader. Then ZX0 compressed CONF
 
 HISIO code comes from MyPicoDos, so ATASM is needed to compile it (ATASM was added into `tools` directory).
 
-Prepare and build FujiNet CONFIG program as usually, inside directory `fujinet-config`, as well ensure recent FujiNet Config Tools are available in `fujinet-config-tools` directory. Directory `fujinet-config-loader` must be at same level as previous two.
+Prepare and build FujiNet CONFIG program as usually, inside directory `fujinet-config`, as well ensure recent FujiNet Config Tools are available in `fujinet-config-tools` directory. Directory `fujinet-config-loader` must be at the same level as previous two.
 
 ```sh
 make clean && make dist
@@ -29,7 +29,7 @@ make clean && make dist
 
 Note: To rebuild `tools` directory use `make cleanall` instaed of `make clean`.
 
-If everything goes fine, there will be new ATR image called `autorun-zx0.atr` The content will be:
+If everything goes fine, there will be new ATR image called `autorun-zx0.atr`. ATR content:
 ```
 CLOADER.ZX0     - ZX0 compressed config loader with bundled HISIO routines and banner bitmap
 CONFIG.XEX      - ZX0 compressed CONFIG programm in format compatible with Atari DOS
