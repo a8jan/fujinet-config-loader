@@ -41,7 +41,10 @@ packers = {
     # packer code: name, packer command
     PACK_LZ4: ("LZ4", ("TBD", "{filein}", "{fileout}")),
     PACK_APL: ("APL", ("TBD", "{filein}", "{fileout}")),
-    PACK_ZX0: ("ZX0", ("zx0", "-f", "{filein}", "{fileout}"), "zx0unpack.obj"),
+    PACK_ZX0: ("ZX0", 
+                ("zx0", "-f", "{filein}", "{fileout}"),
+                ("zx0unpack.obj", (b"\x01\x80\x00", b"\x04\x80\x00"))
+              ),
 }
 
 
@@ -145,14 +148,14 @@ class Segment:
         return segment
 
 
-    def relocate(self, offset, table):
-        #offset = addr - self.start # relocation offset
+    def relocate(self, offset, table, header=True):
+        # print(offset, table)
         # create reloaceted segment
-        if self.run_addr() is None and self.init_addr() is None:
-            # update load address by offset
+        if header:
+            # update load start/end addresses in segment header
             segment = Segment(self.type, self.start + offset, self.end + offset)
         else:
-            # for RUN or INIT keep original load address
+            # keep original addresses for RUN and INIT segments
             segment = Segment(self.type, self.start, self.end)
         # copy data bytes
         segment.data = bytearray(self.data)
@@ -366,11 +369,17 @@ class AtariDosObject:
             if i+2 < len(self.segments) and self.segments[i+1].hint_byte() == 2:
                 # yes, we can relocate
                 if s.init_addr() is None and s.run_addr() is None:
+                    # calculate offset
                     offset = addr - s.start
+                    # relocate start/end addresses in segment header
+                    hdr = True
                     print(f"Relocating segment {i} ({s.start:04X}->{addr:04X} offset {offset:04X}) with table from segment {i+2}")
                 else:
+                    # INIT or/and RUN segment
+                    hdr = False
+                    # use prevoius offset
                     print(f"Relocating segment {i} ({s.start:04X}->{s.start:04X} offset {offset:04X}) with table from segment {i+2}")
-                s = s.relocate(offset, self.segments[i+2].data)
+                s = s.relocate(offset, self.segments[i+2].data, hdr)
                 # skip hint and table segments
                 i += 2
             obj.segments.append(s)
@@ -430,12 +439,20 @@ class AtariDosObject:
             print("Appending decompressor")
             packer = unpack[0][0].packer
             pn, cmd_template, un_template = packers.get(packer, (None, None, None))
-            unpacker_name = un_template
+            unpacker_name = un_template[0]
             unpacker_addr = max([s.end+1 for s in obj.segments])
             unpacker_file = os.path.join(os.path.dirname(__file__), "pack", "a8", unpacker_name)
             unpacker = AtariDosObject().load(unpacker_file).relocate(unpacker_addr)
-            # TODO modify segment, set parameters COMP_DATA and DECOMP_TO
-            pass
+            # TODO better!
+            # modify decompressor segment, set parameters COMP_DATA and DECOMP_TO
+            # set DECOMP_TO, i.e. relocate 0xFFFF (-1) placeholder to RUNAD in segment 1
+            s = unpacker.segments[1]
+            print(f"Setting decompress to address ({obj.segments[1].run_addr():04X})")
+            s = s.relocate(1 + obj.segments[1].run_addr(), un_template[1][0], header=False)
+            # set COMP_DATA, i.e. relocate 0xFFFF (-1) placeholder to start of segment 2
+            print(f"Setting compressed data address ({obj.segments[2].start:04X})")
+            s = s.relocate(1 + obj.segments[2].start, un_template[1][1], header=False)
+            unpacker.segments[1] = s
             # TODO add more segments if more segments needs to be decompressed:
             # re-load COMP_DATA and DECOMP_TO parameters, add INIT to call unpacker
             obj.merge(unpacker)

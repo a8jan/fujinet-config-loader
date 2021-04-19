@@ -40,12 +40,18 @@
 #    to build a relocation table
 #
 # b) relocate only by full pages (only high byte can change, not affected by low bytes)
+
+
 #
+# Usage: relgen.py input_file1 input_file2 output_file
+#  input files - Atari segmented OBJ/COM files, each file is build to different base address
+#  output file - Atari OBJ/COM, it contains the segments from the first input file,
+#                each original segment is followed by segment which contains relocation table
+#
+
 
 import sys
 import struct
-import subprocess
-import os
 
 
 REL_WORD = 0x80
@@ -69,8 +75,7 @@ def add_relocation_entry(reltab, offset, type, param=None):
     # print(s)
 
 
-
-def gen_relocation(fout, start1, offset, data1, data2, rel_header=True):
+def gen_relocation(fout, start1, offset, data1, data2):
     i = 0
     rel = -1
     reltab = bytearray()
@@ -115,7 +120,7 @@ def gen_relocation(fout, start1, offset, data1, data2, rel_header=True):
 
 def main():
     if len(sys.argv) != 4:
-        print("Use: relgen.py input_file1 input_file2 output_file")
+        print("Usage: relgen.py input_file1 input_file2 output_file")
         sys.exit(1)
 
     fn1 = sys.argv[1]
@@ -167,7 +172,7 @@ def main():
                     break
                 data1 = d1[i:i+ssize]
                 data2 = d2[i:i+ssize]
-                reltab = gen_relocation(fout, start1, offset, data1, data2, hdr_offset!=0)
+                reltab = gen_relocation(fout, start1, offset, data1, data2)
                 i += ssize
             else:
                 print("Unexpeted end of file.")
@@ -197,6 +202,7 @@ def main():
             # relocation table
             fout.write(reltab)
             rel_start += len(reltab)
+
 
 if __name__ == '__main__':
     main()

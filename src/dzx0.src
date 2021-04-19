@@ -23,9 +23,9 @@ SIOV            = $E459
     .IF .DEF UNPACKER
 ; COMP_DATA and DECOMP_TO must be set prior calling unpacker !!
 DECOMP_TO
-        .WORD $FFFF
+        .WORD $FFFF     ; placeholder, will be relocated
 GET_BYTE
-        LDA $FFFF
+        LDA $FFFF       ; placeholder, will be relocated
 COMP_DATA = *-2
         INC COMP_DATA
         BNE ?GB1
