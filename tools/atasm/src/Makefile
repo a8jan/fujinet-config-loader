@@ -28,7 +28,7 @@ DOCDIR	= /usr/local/doc/atasm
 .c.o:
 	$(CC) $(CFLAGS) -c $<
 
-all:    prog
+all:    atasm
 
 OBJS    = asm.o symbol.o parser.o setparse.o state.o dimage.o inc_path.o crc32.o atasm_err.o state2.o
 
@@ -40,7 +40,7 @@ state.o: symbol.h
 state2.o: symbol.h
 symbol.o: symbol.h inc_path.h atasm_err.h
 
-prog : $(OBJS)
+atasm : $(OBJS)
 	$(CC) -o atasm $(OBJS) $(L) $(ARCH)
 
 clean:
