@@ -21,9 +21,10 @@
 
 
 import sys
+import os
 import struct
 import subprocess
-import os
+import re
 
 SEGMENT_SIGNATURE = 'SIGNATURE' # 0xffff
 SEGMENT_DATA = 'DATA'           # standard data block with: start,end,data[1+end-start]
@@ -37,14 +38,17 @@ REL_WORD = 0x80
 REL_HIGH = 0x40
 REL_LOW  = 0x20
 
+# attempt to support generic packers
 packers = {
-    # packer code: name, packer command
-    PACK_LZ4: ("LZ4", ("TBD", "{filein}", "{fileout}")),
-    PACK_APL: ("APL", ("TBD", "{filein}", "{fileout}")),
+    # packer ID: name, pack command template, relocatable unpacker
     PACK_ZX0: ("ZX0", 
+                # pack command template (tools/pack/<COMMAND>)
                 ("zx0", "-f", "{filein}", "{fileout}"),
+                # relocatable unpacker (tools/pack/a8/<UNPACKER>) and DECOMP_TO, COMP_DATA rel. tables
                 ("zx0unpack.obj", (b"\x01\x80\x00", b"\x04\x80\x00"))
               ),
+    PACK_LZ4: ("LZ4", ("TBD", "{filein}", "{fileout}"), ("TBD", (b"", b""))),
+    PACK_APL: ("APL", ("TBD", "{filein}", "{fileout}"), ("TBD", (b"", b""))),
 }
 
 
@@ -134,7 +138,11 @@ class Segment:
         except (FileNotFoundError, subprocess.CalledProcessError) as e:
             print(e)
         if out is not None:
-            # print(out)
+            delta = 32 # TODO
+            if packer == PACK_ZX0:
+                g = re.search("\(delta (\d+)\)", out)
+                if g:
+                    delta = int(g[1])
             data = None
             with open(tmpout, 'rb') as fin:
                 data = fin.read()
@@ -142,7 +150,7 @@ class Segment:
                 segment = Segment(SEGMENT_PACKED, self.start, 0)
                 segment.packer = packer
                 segment.data = data
-                segment.decomp_offset = self.len() - len(data) + 3 # TODO get offset from packer output
+                segment.decomp_offset = self.len() - len(data) + delta
             os.unlink(tmpout)
         os.unlink(tmpin)
         return segment
