@@ -76,7 +76,7 @@ def main():
     count, loader_ssn = struct.unpack('<HH', loader_dentry[1:5])
     print(f'Found "{loader_dentry[5:].decode("utf-8")}" {count} sectors, starting at sector {loader_ssn}')
     if loader_ssn != 4:
-        printf("To ge the file booted by ZX0 boot loader the start sector should be 4!")
+        print("To get the file booted by ZX0 boot loader the start sector should be 4!")
 
     count, loaded_ssn = struct.unpack('<HH', loaded_dentry[1:5])
     print(f'Found "{loaded_dentry[5:].decode("utf-8")}" {count} sectors, starting at sector {loaded_ssn}')
