@@ -7,7 +7,7 @@
 
 ATASM ?= ../tools/atasm/atasm
 
-PROGS = zx0boot.bin cloader.zx0 config.xex
+PROGS = zx0boot.bin cloader.zx0 config.com
 
 ASMFLAGS= -Ihisio
 
@@ -71,7 +71,7 @@ zx0unpack-1201.obj: zx0unpack.src dzx0.src
 	../tools/a8pack.py -f zx0unpack-1201.obj zx0unpack-1201-f.obj
 
 # compressed CONFIG, DOS compatible self-extracting, Loader compatible w/ inline decompression
-config.xex: ../../fujinet-config/config.com
+config.com: ../../fujinet-config/config.com
 	@echo "Building compressed CONFIG"
-	../tools/a8pack.py -d -v $< config.xex
+	../tools/a8pack.py -d -v $< config.com
 

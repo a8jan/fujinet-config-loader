@@ -32,6 +32,6 @@ Note: To rebuild `tools` directory use `make cleanall` instaed of `make clean`.
 If everything goes fine, there will be new ATR image called `autorun-zx0.atr`. ATR content:
 ```
 CLOADER.ZX0     - ZX0 compressed config loader with bundled HISIO routines and banner bitmap
-CONFIG.XEX      - ZX0 compressed CONFIG programm in format compatible with Atari DOS
+CONFIG.COM      - ZX0 compressed CONFIG programm in format compatible with Atari DOS
 ...             - all FujiNet Config Tools like FLD, FLH, NCD, NCOPY, FMALL, etc.
 ```
