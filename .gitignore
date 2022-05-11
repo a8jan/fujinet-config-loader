@@ -1,2 +1,8 @@
 dist
 banner
+
+# Visual Studio Code workspace files
+*.code-workspace
+
+# VS Code build directory
+**/.vscode
