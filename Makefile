@@ -30,8 +30,8 @@ dist: all
 	mkdir -p dist
 	cp src/cloader.zx0 dist/
 	cp src/config.com dist/
-	cp ../fujinet-config-tools/dist/*.COM dist/ || true
-	cp ../fujinet-config-tools/dist/*.com dist/ || true
+	cp ../fujinet-config-tools/atari/dist/*.COM dist/ || true
+	cp ../fujinet-config-tools/atari/dist/*.com dist/ || true
 	rm -f autorun-zx0.atr
 	dir2atr -m -S -B src/zx0boot.bin autorun-zx0.atr dist/
 	tools/update-atr.py autorun-zx0.atr cloader.zx0 config.com
