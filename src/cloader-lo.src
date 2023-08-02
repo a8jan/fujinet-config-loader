@@ -70,6 +70,9 @@ HISAV   = SIOSPEED
 SIOSPEED .BYTE $FF
     .ENDIF
 
+BOOTOPT .BYTE 0                 ; boot options
+                                ; 0 = HISIO + silent
+                                ; 2 = standard SIO ($E459) with SIO sounds
 PBOF    .BYTE 0                 ; progress bar offset to current byte
 PBMASK  .BYTE $C0               ; progress bar pixel mask
 SEC2PB  .BYTE 0                 ; sector count to progress bar update
@@ -93,11 +96,29 @@ CMDSAVE
 	.BYTE 0		    ; DRESVD
 	.WORD 0         ; AUX1/2
 
+ALTCOLRS
+    .BYTE $B4, $BC, $90, $00, $90
+
 ; Config Loader code
 CLOADER
     .IF .DEF HIGHSPEED
+        ; is Select button pressed?
+        LDA $D01F
+        AND #2
+        EOR #2
+        STA BOOTOPT
+        BEQ ?SAV0       ; -> no Select, use HISIO
+        ; Select pressed, continue with standard SIO
+        ; change colors
+        LDX #4
+?ALTC   LDA ALTCOLRS,X
+        STA $2C4,X
+        DEX
+        BPL ?ALTC
+        RTS
+        ; setup HISIO
         ; save SIO parameters for boot loader
-        LDX #5
+?SAV0   LDX #5
 ?SAV1   LDA DBUFLO,X
         STA CMDSAVE,X
         DEX

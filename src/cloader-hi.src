@@ -42,9 +42,15 @@ SETDLIST
         STA $231
         LDA #$21        ; narrow play field
         STA $22F        ; shadow of DMACTL
-        LDA #0
+; disable SIO sounds
+        LDA $D20F       ; Shift key pressed?
+        AND #8
+        BEQ ?SKIP       ; -> with Shift keep SIO sounds enabled
+        LDA BOOTOPT
+        BNE ?SKIP       ; -> keep SIO sounds enabled
+        ;LDA #0
         STA $41         ; silent SIO
-        LDX $14
+?SKIP   LDX $14
         LDA #$C0
         STA $D40E       ; re-enable NMI
 ?WVBI   CPX $14
