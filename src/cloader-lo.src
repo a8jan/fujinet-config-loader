@@ -17,6 +17,8 @@
 ;  along with this program; if not, write to the Free Software
 ;  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
+.BANK
+
 ; get zx0 bootloader labels
     .IF .NOT .DEF PARTHI
 	.OPT NO OBJ
@@ -28,16 +30,20 @@
 ; DOLOAD
 ; LOAD1
 ; JMPRUNV
-; JMPSIO
+; READBLOCK
 ; BUFFER
 ; RFINITL, RFINITH
 
-; some "colors" (not only colors)
-        * = $02C1
 
+; some "colors" (not only colors)
+.IF .DEF CASSETTE
+        * = $02C3
+.ELSE ; NOT CASSETTE
+        * = $02C1
 ; CONFIG.COM start sector - use update-atr.py to update the value in final ATR image
 ; CFGSSEC .WORD $0D
 CFGSSEC .WORD $FFFF ; placeholder
+.ENDIF ; NOT CASSETTE
 
 ; progress bar speed factor - use update-atr.py to update the value in final ATR image
 ;
@@ -48,17 +54,18 @@ CFGSSEC .WORD $FFFF ; placeholder
 
 ; CFGSIZE = 8783 ; CONFIG.COM file size in bytes
 ; PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
-PBSF    .BYTE $FF ; placeholder
+PBSF    .BYTE $A7 ; placeholder
 
 ; colors - 2C4-2C8
-        .BYTE $06, $0C, $04, $00, $04
-
+.IF .NOT .DEF CASSETTE
+    .BYTE $06, $0C, $04, $00, $04
+.ENDIF
 
 ; place our code after bootloader ($980)
         * = BOOTEND
 
 ; include HISIO code
-    .IF .DEF HIGHSPEED
+.IF .DEF HIGHSPEED
 	SIOADR = *
 	FASTVBI=1
 	HISIO_MYPICODOS=1
@@ -68,16 +75,18 @@ PBSF    .BYTE $FF ; placeholder
 ; HISAV   .BYTE $FF       ; >=128 no high speed
 HISAV   = SIOSPEED
 SIOSPEED .BYTE $FF
-    .ENDIF
+.ENDIF ; HIGHSPEED
 
-BOOTOPT .BYTE 0                 ; boot options
-                                ; 0 = HISIO + silent
-                                ; 2 = standard SIO ($E459) with SIO sounds
-PBOF    .BYTE 0                 ; progress bar offset to current byte
-PBMASK  .BYTE $C0               ; progress bar pixel mask
-SEC2PB  .BYTE 0                 ; sector count to progress bar update
-DLSAV   .WORD 0                 ; original display list address
-CLNVEC  .WORD CLEANUP           ; our RUN hook, for cleanup prior starting Config
+; BOOTOPT .BYTE 0                 ; boot options
+;                                 ; 0 = HISIO + silent
+;                                 ; 2 = standard SIO ($E459) with SIO sounds
+; PBOF    .BYTE 0                 ; progress bar offset to current byte
+; PBMASK  .BYTE $C0               ; progress bar pixel mask
+; SEC2PB  .BYTE 0                 ; sector count to progress bar update
+; DLSAV   .WORD 0                 ; original display list address
+; CLNVEC  .WORD CLEANUP           ; our RUN hook, for cleanup prior starting Config
+
+.IF .NOT .DEF CASSETTE
 
     .IF .DEF HIGHSPEED
 GETHICMD
@@ -88,13 +97,14 @@ GETHICMD
 	.BYTE $00		; DRESVD = $00
 	.WORD $0001     ; one byte
 	.WORD $0000		; DAUX = 0
-    .ENDIF
+    .ENDIF          ; HIGHSPEED
 
 CMDSAVE
 	.WORD 0 		; DBUF
 	.BYTE 0 		; DTIMLO
 	.BYTE 0		    ; DRESVD
 	.WORD 0         ; AUX1/2
+
 
 ALTCOLRS
     .BYTE $B4, $BC, $90, $00, $90
@@ -134,10 +144,10 @@ CLOADER
         ; redirect SIO to HISIO, patch COM/ZX0 loader
         LDA #<DOHISIO
         STA NE459+1
-        STA JMPSIO+1
+        STA READBLOCK+1
         LDA #>DOHISIO
         STA NE459+2
-        STA JMPSIO+2
+        STA READBLOCK+2
 ?NOHS1
         ; restore SIO parameters
         LDX #5
@@ -145,12 +155,14 @@ CLOADER
         STA DBUFLO,X
         DEX
         BPL ?RES1
-    .ENDIF
+    .ENDIF              ; HIGHSPEED
 
         ; pass control to boot loader code
         RTS
 
 NE459   JMP $E459       ; will be updated to call HISIO
+
+.ENDIF ; NOT CASSETTE
 
         CLLOEND = *
 
@@ -161,6 +173,9 @@ NE459   JMP $E459       ; will be updated to call HISIO
 	.OPT OBJ
     .ENDIF
 
+.IF .NOT .DEF CASSETTE
+.BANK
 ; init address
 	* = $02E2
 	.WORD CLOADER
+.ENDIF ; NOT CASSETTE

@@ -32,9 +32,13 @@ LOAD_PTR        = $45
 LOAD_END        = $47
 
 BUFFER_OFS      = $49           ; offset to current byte
+    .IF .DEF CASSETTE
+BLIM            = $28A          ; record size
+CASCTRL         = $3FF          ; record control byte
+BUFFER          = $400          ; record buffer
+    .ELSE
 BUFFER          = $780          ; sector buffer
-
-
+    .ENDIF
 
 ;--------------------------------------------------
 
@@ -42,11 +46,19 @@ BOOTSTART       = $800
 
         * = BOOTSTART
 
+    .IF .DEF CASSETTE
+        .BYTE 0
+	.BYTE (BOOTEND-BOOTSTART+127)/128-1 ; 2
+    .ELSE
 	.BYTE $78
-	.BYTE (BOOTEND-BOOTSTART+127)/128
+	.BYTE (BOOTEND-BOOTSTART+127)/128 ; 3
+    .ENDIF
 	.WORD BOOTSTART
         .WORD $E477
 
+.IF .NOT .DEF CASSETTE
+;--------------------------------------------------
+; Disk boot
 ;--------------------------------------------------
         LDA #>BUFFER
         STA DBUFHI
@@ -58,6 +70,33 @@ DOLOAD
         JSR READ_SECTOR
         LDY #$00
         STY BUFFER_OFS
+   .ELSE  ; CASSETTE
+;--------------------------------------------------
+; Cassette boot
+;--------------------------------------------------
+        LDY BLIM
+?CB1    LDA BUFFER,Y            ; place bytes from last record
+        STA BOOTSTART+128*((BOOTEND-BOOTSTART+127)/128-1),Y ; BOOTSTART+256
+        DEY
+        BPL ?CB1
+        LDY #4
+?CB2    LDA COLORS,Y
+        STA $02C4,Y
+        DEY
+        BPL ?CB2
+        STY BUFFER_OFS
+        LDA #$1F                ; '?'
+        LDY #$02
+        STA ($58),Y
+        LSR $3F
+        LDA #$34
+        STA $D302               ; stop motor
+        LDY $14
+?WVBI3  CPY $14
+        BEQ ?WVBI3              ; wait a bit before starting SIO calls (with critical flag set)
+
+.ENDIF ; CASSETTE
+
 LOAD1
         JSR GET_BYTE
         BMI RUN_IT
@@ -102,8 +141,13 @@ RFINITL = *-1
         JMP (INITAD)
 ;--------------------------------------------------
 RUN_IT
+    .IF .NOT .DEF CASSETTE
         LDA #$01
         STA $09
+    .ELSE
+        LDA #$3C
+        STA $D302
+    .ENDIF
 JMPRUNV JMP (RUNAD)
 
 ;--------------------------------------------------
@@ -112,8 +156,15 @@ JMPRUNV JMP (RUNAD)
 
 ;--------------------------------------------------
 
-	.IF ((*-BOOTSTART)&127)<>0
+.IF .DEF CASSETTE
+; for slow cassette loader make color change as soon as possible
+; boot loader will copy colors to 2C4-2C8
+COLORS  .BYTE $B4, $BA, $90, $00, $90
+.ELSE
+; pad boot sector
+    .IF ((*-BOOTSTART)&127)<>0
 	.DC (128-((*-BOOTSTART)&127)) 0
-	.ENDIF
+    .ENDIF
+.ENDIF
 
 BOOTEND	= *

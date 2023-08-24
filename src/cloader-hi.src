@@ -27,6 +27,16 @@
 
         * = CLLOEND
 
+BOOTOPT .BYTE 0                 ; boot options
+                                ; 0 = HISIO + silent
+                                ; 2 = standard SIO ($E459) with SIO sounds
+PBOF    .BYTE 0                 ; progress bar offset to current byte
+PBMASK  .BYTE $C0               ; progress bar pixel mask
+SEC2PB  .BYTE 0                 ; sector count to progress bar update
+DLSAV   .WORD 0                 ; original display list address
+CLNVEC  .WORD CLEANUP           ; our RUN hook, for cleanup prior starting Config
+
+
 SETDLIST
 ; setup our Display List
         LDA #0
@@ -42,6 +52,7 @@ SETDLIST
         STA $231
         LDA #$21        ; narrow play field
         STA $22F        ; shadow of DMACTL
+.IF .NOT .DEF CASSETTE
 ; disable SIO sounds
         LDA $D20F       ; Shift key pressed?
         AND #8
@@ -50,12 +61,19 @@ SETDLIST
         BNE ?SKIP       ; -> keep SIO sounds enabled
         ;LDA #0
         STA $41         ; silent SIO
+.ENDIF ; NOT CASSETTE
 ?SKIP   LDX $14
         LDA #$C0
         STA $D40E       ; re-enable NMI
 ?WVBI   CPX $14
         BEQ ?WVBI       ; wait a bit before starting SIO calls (with critical flag set)
         RTS
+
+.IF .DEF CASSETTE
+RUNLOADER
+        JSR SETDLIST
+        ; continue to LOACFG
+.ENDIF ; CASSETTE
 
 LOACFG
 ; prepare "empty" progress bar
@@ -64,6 +82,7 @@ LOACFG
 ?PB     STA PBAR,x
         DEX
         BPL ?PB
+.IF .NOT .DEF CASSETTE
 ; patch loader to support hybrid file hints (2DF-2E1)
         LDA #<(HYBLOAD-1)
         STA RFINITL
@@ -72,20 +91,25 @@ LOACFG
         ; reset hint byte
         LDA #$FF
         STA $2DF
+.ENDIF ; NOT CASSETTE
 ; patch loader to update progress bar
         LDA #<RREADPB
-        STA JMPSIO+1
+        STA READBLOCK+1
         LDA #>RREADPB
-        STA JMPSIO+2
+        STA READBLOCK+2
 ; after load continue at CLEANUP
         LDA #<CLNVEC
         STA JMPRUNV+1
         LDA #>CLNVEC
         STA JMPRUNV+2
 ; load Config
+.IF .DEF CASSETTE
+        RTS             ; continue with loading
+.ELSE ; NOT CASSETTE
 	LDY CFGSSEC     ; Config start sector
 	LDA CFGSSEC+1
         JMP DOLOAD
+.ENDIF ; NOT CASSETTE
 
 CLEANUP
 ; some cleanup here
@@ -111,6 +135,7 @@ CLEANUP
         JMP ($2E0)
 
 
+.IF .NOT .DEF CASSETTE
 HYBLOAD
 ; hybrid file loader
         LDX #$FF
@@ -137,6 +162,7 @@ HYBLOAD
         JMP DZX0_STANDARD ; A = 0
 ?HL2    ; no hint recognized , continue loading
         JMP LOAD1
+.ENDIF ; NOT CASSETTE
 
 
 ; progress bar update + read sector
@@ -157,8 +183,11 @@ RREADPB CLC
         ROR A
         INC PBOF
 ?UP1    STA PBMASK
+.IF .NOT .DEF CASSETTE
 ?JRR    JMP NE459
-
+.ELSE
+?JRR    JMP $E47A
+.ENDIF
 
 ; video memory
 ;VRAM    = $0CE0
@@ -184,13 +213,22 @@ DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
 
 LOADEREND = *
 
-        * = BANNER
-        .incbin "../data/cloader.dat"
-
+.BANK
+.IF .DEF CASSETTE
+; init address
+	* = $02E2
+	.WORD RUNLOADER
+; with cassette run address is specified later in CONFIG
+.ELSE ; NOT CASSETTE
 ; init address
 	* = $02E2
 	.WORD SETDLIST
-
 ; run address
 	* = $02E0
 	.WORD LOACFG
+.ENDIF ; NOT CASSETTE
+
+
+.BANK
+        * = BANNER
+        .incbin "../data/cloader.dat"

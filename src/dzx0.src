@@ -8,6 +8,7 @@
 ;--------------------------------------------------
 
 SIOV            = $E459
+RBLOKV          = $E47A
 
 ;--------------------------------------------------
 
@@ -21,6 +22,8 @@ SIOV            = $E459
 ;--------------------------------------------------
 
     .IF .DEF UNPACKER
+    ; post-load unpacker code
+
 ; COMP_DATA and DECOMP_TO must be set prior calling unpacker !!
 DECOMP_TO
         .WORD $FFFF     ; placeholder, will be relocated
@@ -32,6 +35,7 @@ COMP_DATA = *-2
         INC COMP_DATA+1
 ?GB1    RTS
     .ENDIF
+
 ;--------------------------------------------------
 
 DZX0_STANDARD
@@ -184,6 +188,9 @@ DZX0S_ELIAS_BACKTRACK
         JMP DZX0S_ELIAS_LOOP
 
 ;--------------------------------------------------
+; Disk read
+.IF .NOT .DEF CASSETTE
+
     .IF .NOT .DEF UNPACKER
 GET_BYTE
         LDY BUFFER_OFS
@@ -215,6 +222,33 @@ READ_SECTOR
         STA DSTATS
         LDX #$52        ; 'R - read sector command
         STX DCOMND
-JMPSIO  JMP SIOV
-    .ENDIF
+READBLOCK  JMP SIOV
+    .ENDIF          ; NOT UNPACKER (i.e. loader code)
+;--------------------------------------------------
+
+.ELSE
+
+; Cassette read
+GET_BYTE
+        LDY BUFFER_OFS
+        CPY BLIM        ; record size
+        BCC ?GB0
+        JSR READ_RECORD
+        BMI ?GB1
+?GB0    LDA BUFFER,Y
+        INY
+        STY BUFFER_OFS
+        LDY #$01
+?GB1    RTS
+;--------------------------------------------------
+READ_RECORD
+READBLOCK  JSR RBLOKV
+        BMI DO_RTS
+        LDA CASCTRL     ; record control byte
+        CMP #$FE        ; end-of-file record
+        BEQ DO_RTS
+        LDY #$00
+DO_RTS  RTS
+
+.ENDIF                  ; CASSETTE
 ;--------------------------------------------------

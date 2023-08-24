@@ -4,11 +4,15 @@
 # 2021 apc.atari@gmail.com
 #
 
-.PHONY: all dist tools clean cleantools cleanall
+.PHONY: all cas dist tools clean cleantools cleanall
 
 all: tools
 	@echo "Building CONFIG loader"
 	make -C src all
+
+cas: tools
+	@echo "Building CONFIG cassete loader"
+	make -C src cas
 
 tools:
 	@echo "Building tools"
