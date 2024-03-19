@@ -16,7 +16,7 @@ SIOV            = $E459
 ;         LDA #<LABEL
 ;         LDA #>LABEL                   ; should be detected and reported
 ;         .BYTE <(LABEL+1), >(LABEL)    ; will not be detected
-;                                       ; it looks like world relocation
+;                                       ; it looks like word relocation
 
 ;--------------------------------------------------
 
