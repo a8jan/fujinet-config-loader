@@ -61,6 +61,7 @@ class Segment:
         self.packer = -1
         self.decomp_offset = 0
         self.data = None
+        self.source = None # original/source segment for which pack() was called
 
 
     def len(self):
@@ -151,6 +152,7 @@ class Segment:
                 segment.packer = packer
                 segment.data = data
                 segment.decomp_offset = self.len() - len(data) + delta
+                segment.source = self
             os.unlink(tmpout)
         os.unlink(tmpin)
         return segment
@@ -165,6 +167,7 @@ class Segment:
         else:
             # keep original addresses for RUN and INIT segments
             segment = Segment(self.type, self.start, self.end)
+        segment.source = self
         # copy data bytes
         segment.data = bytearray(self.data)
         # do relocation
@@ -385,7 +388,7 @@ class AtariDosObject:
                 else:
                     # INIT or/and RUN segment
                     hdr = False
-                    # use prevoius offset
+                    # use previous offset
                     print(f"Relocating segment {i} ({s.start:04X}->{s.start:04X} offset {offset:04X}) with table from segment {i+2}")
                 s = s.relocate(offset, self.segments[i+2].data, hdr)
                 # skip hint and table segments
@@ -401,19 +404,34 @@ class AtariDosObject:
         obj = AtariDosObject()
         run_addr = None
         unpack = []
+        # due to current limits in unpacker pick just segment with most bytes saved by compression
+        max_saved = 0
+        candidate = -1
         for i,s in enumerate(self.segments):
             if s.type == SEGMENT_PACKED:
-                print(f"Hybridizing packed segment {i}")
-                s2 = Segment(SEGMENT_DATA, 0x2DF, 0x2E1)
-                # LOAD w/ UNPACK
-                s2.data = b'\x01' + struct.pack('<H', s.start)
-                obj.segments.append(s2)
-                load_addr = s.start + s.decomp_offset
-                s3 = Segment(SEGMENT_DATA, load_addr, load_addr + s.datalen() - 1 + 1) # 1 byte packer code
-                s3.data = struct.pack('B', s.packer) + s.data
-                obj.segments.append(s3)
-                # keep list of segments which needs to be unpacked
-                unpack.append((s, s3))
+                saved = s.source.datalen() - s.datalen()
+                if saved > max_saved:
+                    candidate = i
+                    max_saved = saved
+        if (candidate >= 0):
+            print(f"Preparing hybrid ZX0/DOS file with packed segment {candidate}")
+        for i,s in enumerate(self.segments):
+            if s.type == SEGMENT_PACKED:
+                if i == candidate:
+                    print(f"Hybridizing packed segment {i}")
+                    s2 = Segment(SEGMENT_DATA, 0x2DF, 0x2E1)
+                    # LOAD w/ UNPACK
+                    s2.data = b'\x01' + struct.pack('<H', s.start)
+                    obj.segments.append(s2)
+                    load_addr = s.start + s.decomp_offset
+                    s3 = Segment(SEGMENT_DATA, load_addr, load_addr + s.datalen() - 1 + 1) # 1 byte packer code
+                    s3.data = struct.pack('B', s.packer) + s.data
+                    obj.segments.append(s3)
+                    # keep list of segments which needs to be unpacked
+                    unpack.append((s, s3))
+                else:
+                    print(f"Reverting to unpacked segment {i}")
+                    obj.segments.append(s.source)
             elif s.type == SEGMENT_DATA and s.run_addr() is not None:
                 run_addr = s.run_addr()
                 if stop_run:
@@ -444,7 +462,7 @@ class AtariDosObject:
             obj.segments.append(s)
         # append unpacker and call it for all packed segments
         if unpack:
-            print("Appending decompressor")
+            print("Appending unpacker")
             packer = unpack[0][0].packer
             pn, cmd_template, un_template = packers.get(packer, (None, None, None))
             unpacker_name = un_template[0]
@@ -454,13 +472,15 @@ class AtariDosObject:
             # TODO better!
             # modify decompressor segment, set parameters COMP_DATA and DECOMP_TO
             # set DECOMP_TO, i.e. relocate 0xFFFF (-1) placeholder to RUNAD in segment 1
-            s = unpacker.segments[1]
-            print(f"Setting decompress to address ({obj.segments[1].run_addr():04X})")
-            s = s.relocate(1 + obj.segments[1].run_addr(), un_template[1][0], header=False)
+            unpacker_code_segment = unpacker.segments[1]
+            unpack_to = unpack[0][0].start
+            unpack_from = unpack[0][1].start
+            print(f"Patch unpacker: unpack to {unpack_to:04X}")
+            unpacker_code_segment = unpacker_code_segment.relocate(1 + unpack_to, un_template[1][0], header=False)
             # set COMP_DATA, i.e. relocate 0xFFFF (-1) placeholder to start of segment 2
-            print(f"Setting compressed data address ({obj.segments[2].start:04X})")
-            s = s.relocate(1 + obj.segments[2].start, un_template[1][1], header=False)
-            unpacker.segments[1] = s
+            print(f"Patch unpacker: unpack from {unpack_from:04X}")
+            unpacker_code_segment = unpacker_code_segment.relocate(1 + unpack_from, un_template[1][1], header=False)
+            unpacker.segments[1] = unpacker_code_segment
             # TODO add more segments if more segments needs to be decompressed:
             # re-load COMP_DATA and DECOMP_TO parameters, add INIT to call unpacker
             obj.merge(unpacker)
