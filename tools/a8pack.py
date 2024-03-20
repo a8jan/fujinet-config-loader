@@ -405,7 +405,7 @@ class AtariDosObject:
         run_addr = None
         unpack = []
         # due to current limits in unpacker pick just segment with most bytes saved by compression
-        max_saved = 0
+        max_saved =  0
         candidate = -1
         for i,s in enumerate(self.segments):
             if s.type == SEGMENT_PACKED:
