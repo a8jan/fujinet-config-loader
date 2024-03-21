@@ -50,8 +50,10 @@ CFGSSEC .WORD $FFFF ; placeholder
 ; PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
 PBSF    .BYTE $FF ; placeholder
 
-; colors - 2C4-2C8
-        .BYTE $06, $0C, $04, $00, $04
+; boot colors - 2C4-2C8
+; loaded directly from file segment
+;        .BYTE $06, $0C, $04, $00, $04
+        .BYTE $00, $00, $00, $00, $00
 
 
 ; place our code after bootloader ($980)
@@ -96,8 +98,23 @@ CMDSAVE
 	.BYTE 0		    ; DRESVD
 	.WORD 0         ; AUX1/2
 
+; banner colors, it goes to $2C4 - $2C8
+; [0-4] NTSC - first 5 bytes from colors.dat
+; [5-9] PAL  - next 5 bytes from colors.dat
+; [10-14] Alternate colors - when Select is pressed, HSIO disabled
+
+; hint: to write file with colors
+; echo -n -e '\xB4\xB6\x0E\x00\x00\xA4\xA6\x0E\x00\x00' > colors.dat
+
+COLORS
+    .INCBIN "../data/colors.dat"
+
 ALTCOLRS
-    .BYTE $B4, $BC, $90, $00, $90
+    .BYTE $04, $08, $0E, $00, $00
+
+.IF (ALTCOLRS - COLORS <> 10)
+    .ERROR "10 bytes expected in colors.dat file"
+.ENDIF
 
 ; Config Loader code
 CLOADER
@@ -107,18 +124,24 @@ CLOADER
         AND #2
         EOR #2
         STA BOOTOPT
-        BEQ ?SAV0       ; -> no Select, use HISIO
+        BEQ SETHS       ; -> no Select, continue with HISIO
+
         ; Select pressed, continue with standard SIO
-        ; change colors
+        ; use alternate colors to let user know
+        LDY #10+4       ; offset to ALT colors (end)
+SETCLRS
         LDX #4
-?ALTC   LDA ALTCOLRS,X
+?SETC   LDA COLORS,Y
         STA $2C4,X
+        DEY
         DEX
-        BPL ?ALTC
-        RTS
+        BPL ?SETC
+        RTS             ; when Select is pressed we are done
+
+
         ; setup HISIO
         ; save SIO parameters for boot loader
-?SAV0   LDX #5
+SETHS   LDX #5
 ?SAV1   LDA DBUFLO,X
         STA CMDSAVE,X
         DEX

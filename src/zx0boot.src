@@ -32,13 +32,13 @@ LOAD_PTR        = $45
 LOAD_END        = $47
 
 BUFFER_OFS      = $49           ; offset to current byte
-BUFFER          = $780          ; sector buffer
+BUFFER          = $400          ; sector buffer
 
 
 
 ;--------------------------------------------------
 
-BOOTSTART       = $800
+BOOTSTART       = $500
 
         * = BOOTSTART
 
