@@ -16,7 +16,7 @@ SIOV            = $E459
 ;         LDA #<LABEL
 ;         LDA #>LABEL                   ; should be detected and reported
 ;         .BYTE <(LABEL+1), >(LABEL)    ; will not be detected
-;                                       ; it looks like word relocation
+;                                       ; it looks like world relocation
 
 ;--------------------------------------------------
 
@@ -187,7 +187,7 @@ DZX0S_ELIAS_BACKTRACK
     .IF .NOT .DEF UNPACKER
 GET_BYTE
         LDY BUFFER_OFS
-        CPY BUFFER+127
+        CPY BUFFER+sectsiz-1
         BCC ?GB0
         JSR NEXT_SECTOR
         BMI ?GB1
@@ -199,9 +199,9 @@ GET_BYTE
 ?GB1    RTS
 ;--------------------------------------------------
 NEXT_SECTOR
-        LDA BUFFER+125
+        LDA BUFFER+sectsiz-3
         AND #$03
-        LDY BUFFER+126
+        LDY BUFFER+sectsiz-2
         BNE READ_SECTOR
         CMP #$00
         BNE READ_SECTOR
@@ -215,6 +215,12 @@ READ_SECTOR
         STA DSTATS
         LDX #$52        ; 'R - read sector command
         STX DCOMND
-JMPSIO  JMP SIOV
+.if sectsiz=$100
+	ldx #0
+	stx DBYTLO
+	inx
+	stx DBYTHI
+.endif
+        JMPSIO  JMP SIOV
     .ENDIF
 ;--------------------------------------------------

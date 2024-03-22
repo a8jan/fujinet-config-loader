@@ -45,19 +45,11 @@ SETDLIST
 ; disable SIO sounds
         LDA $D20F       ; Shift key pressed?
         AND #8
-        BEQ ?COLRS      ; -> with Shift keep SIO sounds enabled
+        BEQ ?SKIP       ; -> with Shift keep SIO sounds enabled
         LDA BOOTOPT
-        BNE ?SKIP       ; -> w/ Select keep SIO sounds enabled, colors already changed
+        BNE ?SKIP       ; -> keep SIO sounds enabled
         ;LDA #0
         STA $41         ; silent SIO
-
-?COLRS  LDY #0+4        ; offset to NTSC colors (end)
-        LDX $D014       ; 1 for PAL GTIA, 15 for NTSC
-        DEX
-        BNE ?NTSC
-        LDY #5+4        ; offset to PAL colors (end)
-?NTSC   JSR SETCLRS
-
 ?SKIP   LDX $14
         LDA #$C0
         STA $D40E       ; re-enable NMI
@@ -171,57 +163,33 @@ RREADPB CLC
 ; video memory
 ;VRAM    = $0CE0
 ;VRAM    = $0DE0
-VRAM    = $7FE0
 ; progress bar address
-PBAR    = VRAM+10
+;PBAR    = VRAM+10
 ; logo address
-BANNER  = VRAM+32
+;BANNER  = VRAM+32
 
-; mode F
-;DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
-;        ; banner area
-;        .BYTE 15+64, <BANNER, >BANNER
-;        .BYTE 15, 15, 15, 15, 15, 15, 15
-;        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
-;        ; 4K boundary
-;        .BYTE 15+64, <$1000, >$1000
-;        .BYTE 15, 15, 15, 15, 15, 15, 15
-;        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
-;        .BYTE 112, 112
-;        ; progress bar area
-;        .BYTE 13+64, <VRAM, >VRAM
-;        .BYTE 65, <DLIST, >DLIST
-
-; mode E
-DLIST   .BYTE 112, 112, 112, 112
+DLIST   .BYTE 112, 112, 112, 112, 112, 112, 112, 112
         ; banner area
-        .BYTE 14+64, <BANNER, >BANNER
-        .BYTE 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14, 14, 14, 14
-        .BYTE 14, 14, 14, 14, 14
-        .BYTE 112
+        .BYTE 15+64, <BANNER, >BANNER
+        .BYTE 15, 15, 15, 15, 15, 15, 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
+        ; 4K boundary
+;        .BYTE 15+64, <$1000, >$1000
+	.BYTE 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15
+        .BYTE 15, 15, 15, 15, 15, 15, 15, 15
+        .BYTE 112, 112
         ; progress bar area
         .BYTE 13+64, <VRAM, >VRAM
         .BYTE 65, <DLIST, >DLIST
 
 LOADEREND = *
+VRAM    .DC 10 0
+PBAR    .DC 22 0
+BANNER
 
-        * = BANNER
-        ;.incbin "../data/banner.dat"
-        .incbin "../data/banner-vcf.dat"
+;        * = BANNER
+        .incbin "../data/cloader.dat"
 
 ; init address
 	* = $02E2

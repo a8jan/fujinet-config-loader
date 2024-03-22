@@ -32,6 +32,19 @@
 ; BUFFER
 ; RFINITL, RFINITH
 
+PORTB	= $D301
+NMIEN	= $D40E
+
+bufptr	=$cb
+strtext	=$cd	; pointer to infobytes in ext RAM
+
+osbuff	=$c000+sectsiz
+ossplit	=$d0	; end of 1st OS-RAM part $d000-1
+bufchk	=osbuff-[toextend-cptoext]-1
+bufmag	=0	; offsets into infobytes in ext RAM
+bufmax	=2
+bufsum	=4
+
 ; some "colors" (not only colors)
         * = $02C1
 
@@ -50,10 +63,8 @@ CFGSSEC .WORD $FFFF ; placeholder
 ; PBSF    .BYTE 12544/((CFGSIZE+124)/125) ; assuming SD
 PBSF    .BYTE $FF ; placeholder
 
-; boot colors - 2C4-2C8
-; loaded directly from file segment
-;        .BYTE $06, $0C, $04, $00, $04
-        .BYTE $00, $00, $00, $00, $00
+; colors - 2C4-2C8
+        .BYTE $06, $0C, $04, $00, $04
 
 
 ; place our code after bootloader ($980)
@@ -98,50 +109,38 @@ CMDSAVE
 	.BYTE 0		    ; DRESVD
 	.WORD 0         ; AUX1/2
 
-; banner colors, it goes to $2C4 - $2C8
-; [0-4] NTSC - first 5 bytes from colors.dat
-; [5-9] PAL  - next 5 bytes from colors.dat
-; [10-14] Alternate colors - when Select is pressed, HSIO disabled
-
-; hint: to write file with colors
-; echo -n -e '\xB4\xB6\x0E\x00\x00\xA4\xA6\x0E\x00\x00' > colors.dat
-
-COLORS
-    .INCBIN "../data/colors.dat"
-
 ALTCOLRS
-    .BYTE $04, $08, $0E, $00, $00
-
-.IF (ALTCOLRS - COLORS <> 10)
-    .ERROR "10 bytes expected in colors.dat file"
-.ENDIF
+    .BYTE $B4, $BC, $90, $00, $90
 
 ; Config Loader code
 CLOADER
+	jsr chk4ext
+	lda extram	; do we have extended RAM
+	beq ?noext1
+	jsr vfycach	; check for ext RAM and verify cache contents
+?noext1
+	
     .IF .DEF HIGHSPEED
+	lda rwflag	; fill cache?
+	bne ?nohsio	; no => no HSIO because data comes from cache
+
         ; is Select button pressed?
         LDA $D01F
         AND #2
         EOR #2
         STA BOOTOPT
-        BEQ SETHS       ; -> no Select, continue with HISIO
-
+        BEQ ?SAV0       ; -> no Select, use HISIO
         ; Select pressed, continue with standard SIO
-        ; use alternate colors to let user know
-        LDY #10+4       ; offset to ALT colors (end)
-SETCLRS
-        LDX #4
-?SETC   LDA COLORS,Y
+        ; change colors
+?nohsio LDX #4
+?ALTC   LDA ALTCOLRS,X
         STA $2C4,X
-        DEY
         DEX
-        BPL ?SETC
-        RTS             ; when Select is pressed we are done
-
-
+        BPL ?ALTC
+        RTS
         ; setup HISIO
         ; save SIO parameters for boot loader
-SETHS   LDX #5
+?SAV0   LDX #5
 ?SAV1   LDA DBUFLO,X
         STA CMDSAVE,X
         DEX
@@ -155,12 +154,12 @@ SETHS   LDX #5
         JSR NE459
         BMI ?NOHS1      ; -> high speed not supported by device
         ; redirect SIO to HISIO, patch COM/ZX0 loader
-        LDA #<DOHISIO
+        LDA #<myhisio	; no => use standard HISIO vector
         STA NE459+1
-        STA JMPSIO+1
-        LDA #>DOHISIO
+;        STA JMPSIO+1
+        LDA #>myhisio
         STA NE459+2
-        STA JMPSIO+2
+;        STA JMPSIO+2
 ?NOHS1
         ; restore SIO parameters
         LDX #5
@@ -168,6 +167,7 @@ SETHS   LDX #5
         STA DBUFLO,X
         DEX
         BPL ?RES1
+?noext2
     .ENDIF
 
         ; pass control to boot loader code
@@ -175,7 +175,308 @@ SETHS   LDX #5
 
 NE459   JMP $E459       ; will be updated to call HISIO
 
+    .IF .DEF HIGHSPEED
+myhisio
+	jsr DOHISIO	; only reads here
+
+	lda extram	; do we have extended RAM
+	beq ?noext2	; no => exit
+	jmp filcach	; yes => fill cache
+    .ENDIF
+
+mysiov
+	ldy #1		; default; SIO status OK
+
+	lda DCOMND
+	pha
+	eor rwflag	; 0=fill cache, $52=use cache
+	beq ?nocach		; call SIO only for non-reads or in fill mode
+	
+	jsr SIOV
+
+?nocach	sty DSTATS	; persist SIO status (also the faked ones for cache reads)
+	pla
+	cmp #'R	; catch only reads, no get HSIO etc.
+	bne endsio	; no read => done
+
+filcach	lda DBUFLO	; init pointer to disk sector
+	sta BUFRLO
+	lda DBUFHI
+	sta BUFRHI
+	
+	lda nextbuf	; init pointer to cache block
+	sta BFENLO
+	lda nextbuf+1
+	sta BFENHI
+
+	jsr actext	; activate extended RAM
+	
+	ldy #0
+nextbyt
+	lda (BFENLO),y	; patched by loader to fill cache
+	sta (BUFRLO),y	; patched by loader to fill cache
+
+	clc		; calculate original checksum on the fly
+	adc echksum
+	sta echksum
+	bcc ?cc1
+	inc echksum+1
+?cc1
+	iny
+.if sectsiz=$80
+	bpl nextbyt
+
+	clc
+	lda nextbuf
+	adc #sectsiz
+	sta nextbuf
+	lda nextbuf+1
+	adc #0
+.else	; sectsiz=$100
+	bne nextbyt
+
+	inc nextbuf+1
+	lda nextbuf+1
+.endif
+	cmp bufstop	; nextbuf=$d000
+	bne ?noskip
+	lda bufcont	; yes => $d800
+?noskip	sta nextbuf+1
+
+	lda rwflag	; store values only when cache is filled
+	bne nofill1
+
+	ldy #[toextend-cptoext-1]	; store endbuf, echksum and magic "FN" in ext RAM
+?loop1	lda cptoext,y
+	sta (strtext),y
+	dey
+	bpl ?loop1
+nofill1
+
+	jsr dactext	; deactivate extended RAM
+
+endsio
+	ldy DSTATS
+	rts
+
+; activate extended RAM
+actext
+	ldx extram
+	dex
+	beq actaxl
+	dex
+	beq actxe
+
+norom	lda #0		; disable interrupt
+	sta IRQEN
+	sta NMIEN
+
+	lda PORTB
+;	sta savprtb+1
+	and #$fe	
+	STA PORTB
+	rts
+
+actaxl	lda #$ff
+	bne doaxl
+
+dactaxl	lda #0
+doaxl	sta $cfff
+	rts
+	
+actxe	lda PORTB
+	and #$e3
+	bne doxe
+
+dactxe	lda PORTB
+	ora #$1c
+doxe	sta PORTB
+	rts
+	
+; deactivate extended RAM
+dactext
+	ldx extram
+	dex
+	beq dactaxl
+	dex
+	beq dactxe
+
+rom
+	lda PORTB
+	ora #1
+	sta PORTB
+
+	lda #$40	; enable interrupt
+	sta NMIEN
+	lda #$C0
+	sta IRQEN
+	rts
+	
+rwflag	.byte	0	; 0=fill cache, 1=use cache
+extram	.byte	0	; 0=no 1=Axlon 2=XE 3=OS
+cbuffer	.word	$4000+sectsiz	; ext RAM window
+bufstop	.byte	$0	; pos. of split for split area (OS=$d0xx)
+bufcont	.byte	$d8	; start of 2nd area (OS=$d8)
+
+maxbuf	.word	0	; end of load buffer
+
+cptoext			; this block is copied to ext RAM for verification on reboot
+magic	.byte	"FN"	; magic bytes
+nextbuf	.word	$4000+sectsiz	; next cache buffer to use
+echksum	.word	0	; calculated checksum
+toextend
+
         CLLOEND = *
+
+; This block is intentionally behind CLLOEND because it is only used
+; for initialization and can be overwritten afterwards.
+
+; Check for extended RAM (under XL-OS, XE 128K+ or Axlon)
+; 0=no extended RAM, 1=Axlon, 2=XE>64K, 3=XL-64K
+chk4ext
+	ldy #0		; check Axlon
+	sty $4000
+	ldx #$ff
+	stx $cfff
+	stx $4000
+	sty $cfff
+	cpy $4000
+	beq axlon
+
+noaxlon
+;	ldy #0
+	sty $4000	; check XE RAM >64K
+	jsr actxe
+;	ldx #$ff
+	stx $4000
+	jsr dactxe
+	cpy $4000
+	beq xeram
+
+noxe
+	jsr norom	; check XL =64K
+	lda bufchk	; ROM disabled?
+	inc bufchk
+	cmp bufchk
+	php
+	jsr rom
+	plp
+	beq noext
+	
+;	lda #<osbuff	; already predefined
+;	sta cbuffer
+	lda #>osbuff
+	sta cbuffer+1
+	sta nextbuf+1
+	lda #ossplit
+	sta bufstop
+;	lda #oscont	; already predefined
+;	sta bufcont
+	
+	iny
+xeram	iny
+axlon	iny
+
+	sec		; setup pointer to infobytes in ext RAM
+	lda cbuffer
+	sbc #[toextend-cptoext]	; number of infobytes in ext RAM
+	sta strtext
+	lda cbuffer+1
+.if sectsiz=$100
+	sbc #0
+.endif
+	sta strtext+1
+	
+	lda #<NE459	; patch SIO call in ZX0 loader
+	sta JMPSIO+1
+	lda #>NE459
+	sta JMPSIO+2
+
+	lda #<mysiov	; patch SIO call in loader
+	sta NE459+1
+	lda #>mysiov
+	sta NE459+2
+
+noext	sty extram
+	rts
+	
+
+; If extended RAM found, search it for cached copy of loader
+vfycach
+	lda cbuffer
+	sta bufptr
+	lda cbuffer+1
+	sta bufptr+1
+
+	jsr actext	; activate ext RAM
+	
+	ldy #bufmax+1
+?loop2	lda (strtext),y	; move end of buffer from ext RAM
+	sta maxbuf-2,y	; y is 2 too high
+	dey
+	cpy #[bufmax-1]
+	bne ?loop2
+;	ldy #bufmag+1
+?loop3	lda (strtext),y	; magic "FN" in buffer set?
+	cmp magic,y
+	bne invalid
+	dey
+	bpl ?loop3	; bufmag MUST be =$0
+
+	iny		; =$ff
+;	ldy #0
+loopsum	clc
+	lda (bufptr),y
+	adc echksum
+	sta echksum
+	bcc ?cc2
+	inc echksum+1
+
+?cc2	inc bufptr
+	bne ?cc3
+	inc bufptr+1
+?cc3
+	lda bufptr+1
+	cmp bufstop	; is nextbuf=$d000
+	bne ?noskip2
+	lda bufcont	; yes => $d800
+	sta bufptr+1
+?noskip2
+	cmp maxbuf+1
+	bne loopsum
+
+	lda bufptr
+	cmp maxbuf
+	bne loopsum
+
+	ldy #bufsum
+	lda echksum	; verify checksum
+	cmp (strtext),y
+	bne invalid
+	iny
+	lda echksum+1
+	cmp (strtext),y
+	bne invalid
+
+	lda #'R		; use cache mode
+	sta rwflag
+	
+	bne done
+	
+invalid
+	lda #BUFRLO	; switch to "fill cache"
+	sta nextbyt+1
+	lda #BFENLO
+	sta nextbyt+3
+	
+done
+	lda #0		; reset checksum for generation during cache fill
+	sta echksum
+	sta echksum+1
+
+	jsr dactext	; de-activate ext RAM
+
+	rts
 
     .IF .NOT .DEF PARTHI
 ; get labels from high speed part

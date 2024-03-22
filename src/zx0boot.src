@@ -33,12 +33,12 @@ LOAD_END        = $47
 
 BUFFER_OFS      = $49           ; offset to current byte
 BUFFER          = $400          ; sector buffer
-
+sectsiz	= $100
 
 
 ;--------------------------------------------------
 
-BOOTSTART       = $500
+BOOTSTART       = BUFFER+sectsiz
 
         * = BOOTSTART
 
@@ -48,12 +48,16 @@ BOOTSTART       = $500
         .WORD $E477
 
 ;--------------------------------------------------
-        LDA #>BUFFER
-        STA DBUFHI
+        LDY #>BUFFER
+        STY DBUFHI
         LDA #<BUFFER
         STA DBUFLO
+; With these commands the resulting code for DD is one byte too big.
+; fortunately BUFFER $400 = inverted LOADSECT $0004
+.if sectsiz=$80
         LDY #<LOADSECT
         LDA #>LOADSECT
+.endif
 DOLOAD
         JSR READ_SECTOR
         LDY #$00
