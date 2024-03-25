@@ -46,6 +46,7 @@ bufmax	=2
 bufsum	=4
 
 ; some "colors" (not only colors)
+		.BANK
         * = $02C1
 
 ; CONFIG.COM start sector - use update-atr.py to update the value in final ATR image
@@ -66,8 +67,13 @@ PBSF    .BYTE $FF ; placeholder
 ; colors - 2C4-2C8
         .BYTE $06, $0C, $04, $00, $04
 
+		; turn off display (disable DMA, will be re-enabled later)
+		.BANK
+		* = $022F
+		.BYTE 0
 
 ; place our code after bootloader ($980)
+		.BANK
         * = BOOTEND
 
 ; include HISIO code
@@ -132,11 +138,11 @@ CLOADER
         BEQ ?SAV0       ; -> no Select, use HISIO
         ; Select pressed, continue with standard SIO
         ; change colors
-?nohsio LDX #4
-?ALTC   LDA ALTCOLRS,X
-        STA $2C4,X
-        DEX
-        BPL ?ALTC
+?nohsio ;LDX #4
+?ALTC   ;LDA ALTCOLRS,X
+        ;STA $2C4,X
+        ;DEX
+        ;BPL ?ALTC
         RTS
         ; setup HISIO
         ; save SIO parameters for boot loader
@@ -486,5 +492,6 @@ done
     .ENDIF
 
 ; init address
+	.BANK
 	* = $02E2
 	.WORD CLOADER

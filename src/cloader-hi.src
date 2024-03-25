@@ -25,6 +25,7 @@
 	.OPT OBJ
     .ENDIF
 
+        .BANK
         * = CLLOEND
 
 SETDLIST
@@ -188,9 +189,11 @@ VRAM    .DC 10 0
 PBAR    .DC 22 0
 BANNER
 
+;        .BANK
 ;        * = BANNER
-        .incbin "../data/cloader.dat"
+        .incbin "../data/banner.dat"
 
+        .BANK
 ; init address
 	* = $02E2
 	.WORD SETDLIST
