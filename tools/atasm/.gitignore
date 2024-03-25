@@ -1,0 +1,8 @@
+src/*.rej
+src/*.o
+src/*~
+src/atasm
+src/atasm.1
+src/atasm.exe
+atasm
+atasm.exe

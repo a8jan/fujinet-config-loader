@@ -1,0 +1,5 @@
+*.obj
+*.bin
+*.lst
+cloader.zx0
+config.com
