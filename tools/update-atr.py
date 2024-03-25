@@ -25,12 +25,34 @@ def atari_filename(fname):
     return (name+ext).upper().encode("ASCII")
 
 
+def _sector_offset(sector, bps):
+    if sector == 1:
+        offset = 16
+    elif sector == 2:
+        if bps == 512:
+            offset = 528
+        else:
+            offset = 144
+    elif sector == 3:
+        if bps == 512:
+            offset = 1040
+        else:
+            offset = 272
+    else:
+        if bps == 512:
+            offset = sector * 512 + 16
+        elif bps == 256:
+            offset = ((sector - 3) * 256) + 16 + 128
+        else:
+            offset = ((sector - 1) * 128) + 16
+    return offset
 
-def get_dentry(atr, fname):
+
+def get_dentry(atr, fname, bps=128):
     a8fname = atari_filename(fname)
     for sec in range(361, 369):
         for di in range(8):
-            dentry_offset = 16 + 128*(sec-1) + 16*di
+            dentry_offset = _sector_offset(sec, bps) + 16*di
             dentry = atr[dentry_offset:dentry_offset+16]
             flag = dentry[0]
             if flag == 0:
@@ -63,12 +85,18 @@ def main():
         print(e)
         sys.exit(-1)
 
-    loader_dentry = get_dentry(atr, loaderfn)
+    magic = struct.unpack('<H', atr[0:2])[0]
+    if magic != 0x0296:
+        print("ATR header missing 'NICKATARI'")
+        sys.exit(-1)
+    bps = struct.unpack('<H', atr[4:6])[0]
+
+    loader_dentry = get_dentry(atr, loaderfn, bps)
     if loader_dentry is None:
         print(f'Cannot find "{loaderfn}" in "{atrfn}"')
         sys.exit(-1)
     
-    loaded_dentry = get_dentry(atr, loadedfn)
+    loaded_dentry = get_dentry(atr, loadedfn, bps)
     if loaded_dentry is None:
         print(f'Cannot find "{loadedfn}" in "{atrfn}"')
         sys.exit(-1)
